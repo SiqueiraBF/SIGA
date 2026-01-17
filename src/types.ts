@@ -1,0 +1,181 @@
+export type Modulo =
+  | 'abrir_solicitacao'
+  | 'analisar_cadastros'
+  | 'gestao_usuarios'
+  | 'config_fazendas'
+  | 'gestao_combustivel'
+  | 'gestao_postos'
+  | 'abast_lancar'
+  | 'abast_conferir';
+
+export type ViewScope = 'ALL' | 'OWN_ONLY' | 'NONE';
+export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
+
+export interface ModulePermission {
+  view_scope: ViewScope;
+  edit_scope: EditScope;
+  can_confirm: boolean;
+  manage_fleet?: boolean;
+  manage_roles?: boolean;
+  can_ignore_nuntec?: boolean; // Permite ignorar pendências da Nuntec
+  can_create_manual?: boolean; // Permite criar baixas manuais (sem integração)
+}
+
+export interface Funcao {
+  id: string;
+  nome: string;
+  modulos_permitidos: Modulo[];
+  permissoes?: Record<string, ModulePermission>; // Key is Modulo, but string for flexibility
+}
+
+export interface Usuario {
+  id: string;
+  nome: string;
+  login: string;
+  senha?: string; // Optional for safety when retrieving
+  funcao_id: string;
+  fazenda_id?: string; // Nullable if Central user
+  ativo: boolean;
+  email?: string;
+  telefone?: string;
+  last_login?: string; // ISO Date of last authentication
+  last_seen?: string; // ISO Date of last heartbeat
+}
+
+export interface Fazenda {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
+
+export type Prioridade = 'Normal' | 'Urgente';
+export type StatusSolicitacao =
+  | 'Aberto'
+  | 'Aguardando'
+  | 'Em Cadastro'
+  | 'Finalizado'
+  | 'Devolvido';
+
+export interface Solicitacao {
+  id: string;
+  numero: number; // Sequential number for display
+  usuario_id: string;
+  fazenda_id: string;
+  data_abertura: string; // ISO Date
+  prioridade: Prioridade;
+  status: StatusSolicitacao;
+  observacao_geral?: string;
+  created_at?: string;
+}
+
+export type StatusItem =
+  | 'Pendente'
+  | 'Aprovado'
+  | 'Reprovado'
+  | 'Existente'
+  | 'Reativado'
+  | 'Devolvido';
+
+export interface ItemSolicitacao {
+  id: string;
+  numero: number; // Sequential number within the request
+  solicitacao_id: string;
+  descricao: string;
+  unidade: string;
+  marca?: string;
+  referencia?: string;
+  status_item: StatusItem;
+  cod_reduzido_unisystem?: string;
+  motivo_reprovacao?: string;
+}
+
+export type AcaoLog = 'CRIAR' | 'EDITAR' | 'STATUS' | 'EXCLUIR' | 'ITEM_EXCLUIDO' | 'ITEM_ALTERADO';
+
+export interface AuditLog {
+  id: string;
+  data_hora: string; // ISO Date
+  usuario_id: string;
+  acao: AcaoLog;
+  tabela: string;
+  registro_id: string;
+  dados_anteriores?: unknown;
+  dados_novos?: unknown;
+}
+
+// --- Módulo de Combustíveis ---
+
+export interface Veiculo {
+  id: string;
+  identificacao: string;
+  ativo: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Posto {
+  id: string;
+  fazenda_id: string;
+  nome: string;
+  ativo: boolean;
+  created_at?: string;
+  nuntec_reservoir_id?: string; // ID do reservatório de DESTINO para monitorar no Nuntec
+}
+
+export type TipoMarcador = 'ODOMETRO' | 'HORIMETRO' | 'SEM_MEDIDOR';
+
+export interface Abastecimento {
+  id: string;
+  numero: number;
+  data_abastecimento: string;
+  fazenda_id: string;
+  posto_id: string;
+  veiculo_possui_cadastro: boolean;
+  veiculo_id?: string | null;
+  veiculo_nome?: string | null;
+  volume: number;
+  operador: string;
+  operacao: string;
+  cultura: string;
+  tipo_marcador: TipoMarcador;
+  leitura_marcador?: number | null;
+  motivo_sem_marcador?: string | null;
+  status: string;
+  usuario_id: string;
+  nuntec_transfer_id?: string; // ID da transferência Nuntec para evitar duplicidade
+  // Campos para display (Joins)
+  usuario?: { nome: string };
+  fazenda?: { nome: string };
+  posto?: { nome: string };
+}
+
+// --- Integração Nuntec ---
+
+export interface NuntecPointing {
+  id: string;
+  amount: number;
+  'reservoir-id'?: string;
+  'fuel-id'?: string;
+  'nozzle-number'?: string;
+}
+
+export interface NuntecTransfer {
+  id: string;
+  'start-at': string;
+  'end-at'?: string;
+  'operator-id'?: string;
+  'pointing-in': NuntecPointing;
+  'pointing-out'?: NuntecPointing;
+  // Campos enriquecidos no cliente
+  operatorName?: string;
+  status?: 'PENDENTE_DADOS' | 'BAIXADO' | 'IGNORADO';
+}
+
+export interface IntegrationConfig {
+  id: string;
+  provider: 'NUNTEC';
+  username?: string;
+  password?: string;
+  sync_start_date?: string;
+  is_active: boolean;
+  base_url?: string;
+}

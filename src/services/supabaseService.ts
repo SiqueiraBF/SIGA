@@ -252,54 +252,93 @@ export const db = {
   },
 
   // Integration Config (Nuntec)
+  // Integration Config (Nuntec)
   async getIntegrationConfig(): Promise<IntegrationConfig | null> {
     const { data, error } = await supabase
-      .from('integration_configs')
+      .from('integration_settings')
       .select('*')
       .eq('provider', 'NUNTEC')
       .maybeSingle();
 
     if (error) {
-      console.warn('Error fetching integration config:', error);
+      console.warn('Error fetching integration settings:', error);
       return null;
     }
-    return data;
+    if (!data) return null;
+
+    // Map DB fields to internal type
+    return {
+      id: data.id,
+      provider: data.provider,
+      is_active: data.is_active,
+      username: data.username,
+      password: data.password,
+      base_url: data.base_url,
+      sync_start_date: data.sync_start_date,
+      // Default others if missing from DB schema version
+      sync_interval_minutes: 60,
+      last_sync_at: null
+    } as unknown as IntegrationConfig;
   },
 
   async saveIntegrationConfig(
     config: Partial<IntegrationConfig>,
     modifierId?: string,
   ): Promise<void> {
+    // Map internal type to DB fields
+    const payload = {
+      provider: 'NUNTEC',
+      username: config.username,
+      password: config.password,
+      base_url: config.base_url,
+      sync_start_date: config.sync_start_date,
+      is_active: config.is_active,
+      updated_at: new Date().toISOString()
+    };
+
+    // Upsert based on provider unique key
     const { error } = await supabase
-      .from('integration_configs')
-      .upsert({ ...config, provider: 'NUNTEC' });
+      .from('integration_settings')
+      .upsert(payload, { onConflict: 'provider' });
 
     if (error) throw error;
   },
 
   async getIgnoredNuntecTransfers(): Promise<string[]> {
-    const { data, error } = await supabase.from('nuntec_ignored_transfers').select('transfer_id');
+    const { data, error } = await supabase.from('nuntec_ignored_transfers').select('nuntec_transfer_id');
 
     if (error) {
       console.warn('Error fetching ignored transfers:', error);
       return [];
     }
-    return data ? data.map((d: any) => d.transfer_id) : [];
+    return data ? data.map((d: any) => d.nuntec_transfer_id) : [];
   },
 
   async ignoreNuntecTransfer(transferId: string, userId: string): Promise<void> {
+    // Try inserting with user tracking first
     const { error } = await supabase
       .from('nuntec_ignored_transfers')
-      .insert({ transfer_id: transferId, ignored_by: userId });
+      .insert({ nuntec_transfer_id: transferId, ignored_by: userId });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Detailed Ignore Error:", error);
+      // Fallback: If FK fails (user not found), try inserting without user tracking
+      if (error.code === '23503') { // Foreign Key Violation
+        const { error: retryError } = await supabase
+          .from('nuntec_ignored_transfers')
+          .insert({ nuntec_transfer_id: transferId });
+        if (retryError) throw retryError;
+        return;
+      }
+      throw error;
+    }
   },
 
   async restoreNuntecTransfer(transferId: string): Promise<void> {
     const { error } = await supabase
       .from('nuntec_ignored_transfers')
       .delete()
-      .eq('transfer_id', transferId);
+      .eq('nuntec_transfer_id', transferId);
 
     if (error) throw error;
   },

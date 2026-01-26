@@ -4,7 +4,7 @@ interface StatsCardProps {
   title: string;
   value: string | number;
   icon: LucideIcon;
-  description?: string;
+  description?: React.ReactNode;
   variant?: 'default' | 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'orange';
   onClick?: () => void;
   className?: string;
@@ -103,7 +103,7 @@ export function StatsCard({
       </div>
       <p className={`text-sm font-bold uppercase tracking-wider ${style.textColor}`}>{title}</p>
       {description && (
-        <p className={`text-xs mt-1 font-medium opacity-80 ${style.subTextColor}`}>{description}</p>
+        <div className={`text-xs mt-1 font-medium opacity-80 ${style.subTextColor}`}>{description}</div>
       )}
     </div>
   );

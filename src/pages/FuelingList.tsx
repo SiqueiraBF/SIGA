@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { fuelService } from '../services/fuelService';
 import { nuntecService } from '../services/nuntecService';
 import { db } from '../services/supabaseService';
@@ -25,6 +25,7 @@ import {
   Ban,
   Undo2,
   EyeOff,
+  ShieldCheck,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { FuelingFormModal } from '../components/FuelingFormModal';
@@ -32,14 +33,18 @@ import { FuelingDetailsModal } from '../components/FuelingDetailsModal';
 import { FuelingResolutionModal } from '../components/FuelingResolutionModal';
 import { AuditLogModal } from '../components/AuditLogModal';
 import { VehicleManagementModal } from '../components/VehicleManagementModal';
+import { ComplianceDashboard } from '../components/dashboard/ComplianceDashboard';
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatsCard } from '../components/ui/StatsCard';
+import { TableSkeleton } from '../components/ui/TableSkeleton';
+import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { TableActions } from '../components/ui/TableActions';
+
 
 // Helper for Sort
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -49,6 +54,8 @@ const MODULE_KEY: Modulo = 'gestao_combustivel';
 export function FuelingList() {
   const { user, role, checkAccess } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([]);
   const [pendenciasNuntec, setPendenciasNuntec] = useState<NuntecTransfer[]>([]);
   const [nuntecError, setNuntecError] = useState<string | null>(null);
@@ -60,20 +67,37 @@ export function FuelingList() {
   const [postos, setPostos] = useState<(Posto & { fazenda: { nome: string } })[]>([]);
   const [usuarios, setUsuarios] = useState<{ id: string; nome: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRepairing, setIsRepairing] = useState(false);
 
-  // View Mode: LOCAL = Baixas Internas, INTEGRATION = Pendências Nuntec
-  const [viewMode, setViewMode] = useState<'LOCAL' | 'INTEGRATION'>('LOCAL');
+  // View Mode: LOCAL = Baixas Internas, INTEGRATION = Pendências Nuntec, AUDIT = Auditoria
+  const [viewMode, setViewMode] = useState<'LOCAL' | 'INTEGRATION' | 'AUDIT'>('LOCAL');
+
+  useEffect(() => {
+    const viewParam = searchParams.get('view');
+    if (viewParam === 'integration') {
+      setViewMode('INTEGRATION');
+    } else if ((location.state as any)?.viewMode) {
+      setViewMode((location.state as any).viewMode);
+    }
+  }, [location.state, searchParams]);
 
   // Filters & View Mode
-  const [filterFazenda, setFilterFazenda] = useState('');
-  const [filterPosto, setFilterPosto] = useState('');
-  const [filterUser, setFilterUser] = useState('');
+  // Filters & View Mode
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // New Filters Requested
+  const [filterVeiculo, setFilterVeiculo] = useState('');
+  const [filterSemMedidor, setFilterSemMedidor] = useState(false);
+
+  // Removed misplaced hook
+
+
   // Filtro Interativo (Similar ao RegistrarDashboard)
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDENTE'>('ALL');
+  const [selectedPostoId, setSelectedPostoId] = useState<string | null>(null);
+  const [selectedNuntecReservoirId, setSelectedNuntecReservoirId] = useState<number | null>(null);
 
   // Modals
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -131,6 +155,9 @@ export function FuelingList() {
     role?.permissoes?.[MODULE_KEY]?.edit_scope === 'ALL' || role?.nome === 'Administrador';
   const canManageFleet = role?.permissoes?.[MODULE_KEY]?.manage_fleet;
 
+  const viewScope = role?.permissoes?.[MODULE_KEY]?.view_scope;
+  const canViewAllFarms = viewScope === 'ALL' || role?.nome === 'Administrador';
+
   useEffect(() => {
     loadData();
   }, []);
@@ -142,6 +169,29 @@ export function FuelingList() {
     }
   }, [viewMode, postos, abastecimentos]);
 
+  // Create a filtered view of data based on permissions
+  const visibleAbastecimentos = useMemo(() => {
+    if (!canViewAllFarms && user?.fazenda_id) {
+      return abastecimentos.filter(a => {
+        // 1. Direct check
+        if (a.fazenda_id && String(a.fazenda_id) === String(user.fazenda_id)) return true;
+
+        // 2. Fallback check via Posto (if fazenda_id is null/missing on record)
+        if (a.posto_id) {
+          const posto = postos.find(p => p.id === a.posto_id);
+          return posto ? String(posto.fazenda_id) === String(user.fazenda_id) : false;
+        }
+        return false;
+      });
+    }
+    return abastecimentos;
+  }, [abastecimentos, canViewAllFarms, user, postos]);
+
+  const uniqueVehicles = useMemo(() => {
+    const set = new Set(visibleAbastecimentos.map(a => a.veiculo_nome).filter((v): v is string => !!v));
+    return Array.from(set).sort();
+  }, [visibleAbastecimentos]);
+
   async function loadData() {
     setLoading(true);
     try {
@@ -151,7 +201,7 @@ export function FuelingList() {
         fuelService.getPostos(),
         db.getAllUsers(),
       ]);
-      setAbastecimentos(dataAbastecimentos);
+      setAbastecimentos(dataAbastecimentos); // Store RAW data
       setFazendas(dataFazendas);
       setPostos(dataPostos);
       setUsuarios(dataUsuarios);
@@ -163,8 +213,9 @@ export function FuelingList() {
   }
 
   async function loadNuntecData() {
-    // Only load if configured postos exist
-    const configuredPostos = postos.filter((p) => p.nuntec_reservoir_id);
+    // Only load if configured postos exist AND are VIRTUAL (Gerente)
+    // The user requested that this tab ONLY show Virtual Stock pendencies
+    const configuredPostos = postos.filter((p) => p.nuntec_reservoir_id && p.tipo === 'VIRTUAL');
     if (configuredPostos.length === 0) {
       setPendenciasNuntec([]);
       return;
@@ -185,9 +236,9 @@ export function FuelingList() {
 
       setLastUpdate(new Date());
 
-      // Apply farm visibility filter for non-admins
+      // Apply farm visibility filter for non-admins / restricted view
       let visibleTransfers = transfers;
-      if (!hasFullManagement && user?.fazenda_id) {
+      if (!canViewAllFarms && user?.fazenda_id) {
         // Find visible reservoir IDs based on user farm
         const visibleReservoirIds = new Set(
           configuredPostos
@@ -224,9 +275,9 @@ export function FuelingList() {
     setIsDetailsOpen(true);
   };
 
-  const handleConfirm = async (item: Abastecimento) => {
+  const handleConfirm = async (item: Abastecimento, nuntecId?: string) => {
     try {
-      await fuelService.confirmBaixa(item.id, user!.id);
+      await fuelService.confirmBaixa(item.id, user!.id, nuntecId);
       await loadData();
       setIsDetailsOpen(false);
     } catch (error) {
@@ -298,135 +349,197 @@ export function FuelingList() {
     }
   }
 
-  // Filter Logic
-  const availableUserIds = useMemo(() => {
-    const ids = new Set<string>();
-    abastecimentos.forEach((a) => {
-      if (activeFilter === 'PENDENTE' && a.status !== 'PENDENTE') return;
-      if (filterFazenda && a.fazenda_id !== filterFazenda) return;
-      if (filterPosto && a.posto_id !== filterPosto) return;
+  // availableUserIds logic removed as User filter is deprecated
+  // Only recalculate filteredList directly
+
+
+  const filteredList = useMemo(() => {
+    const hasBroadScope = viewScope === 'ALL' || viewScope === 'SAME_FARM' || role?.nome === 'Administrador';
+
+    return visibleAbastecimentos.filter((a) => {
+      // Only restrict to own records if user lacks broad scope AND explicit view permission
+      if (!hasBroadScope && !canViewAll && a.usuario_id !== user?.id) return false;
+
+      // Active Filter
+      if (activeFilter === 'PENDENTE' && a.status !== 'PENDENTE') return false;
+
+      // Card Filter
+      if (selectedPostoId) {
+        if (a.posto_id !== selectedPostoId || a.status !== 'PENDENTE') return false;
+      }
+
+      // New Filters
+      if (filterVeiculo && a.veiculo_nome !== filterVeiculo) return false;
+      if (filterSemMedidor && a.tipo_marcador !== 'SEM_MEDIDOR') return false;
+
       if (filterStartDate || filterEndDate) {
         const date = parseISO(a.data_abastecimento);
-        if (filterStartDate && date < parseISO(filterStartDate + 'T00:00:00')) return;
-        if (filterEndDate && date > parseISO(filterEndDate + 'T23:59:59')) return;
+        if (filterStartDate && date < parseISO(filterStartDate + 'T00:00:00')) return false;
+        if (filterEndDate && date > parseISO(filterEndDate + 'T23:59:59')) return false;
       }
-      ids.add(a.usuario_id);
+
+      if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        return (
+          a.numero.toString().includes(s) ||
+          (a.veiculo_nome || '').toLowerCase().includes(s) ||
+          a.operador.toLowerCase().includes(s) ||
+          (a.nuntec_transfer_id || '').toLowerCase().includes(s) ||
+          (a.nuntec_generated_id || '').toLowerCase().includes(s)
+        );
+      }
+      return true;
     });
-    return ids;
-  }, [abastecimentos, filterFazenda, filterPosto, filterStartDate, filterEndDate, activeFilter]);
+  }, [visibleAbastecimentos, canViewAll, user, activeFilter, selectedPostoId, filterVeiculo, filterSemMedidor, filterStartDate, filterEndDate, searchTerm]);
 
-  const filteredList = abastecimentos.filter((a) => {
-    if (!canViewAll && a.usuario_id !== user?.id) return false;
+  const sortedList = useMemo(() => {
+    return [...filteredList].sort((a, b) => {
+      if (!sortConfig) return 0;
+      const { key, direction } = sortConfig;
+      let valA: any = a;
+      let valB: any = b;
 
-    // Active Filter (Card Logic)
-    if (activeFilter === 'PENDENTE' && a.status !== 'PENDENTE') return false;
+      switch (key) {
+        case 'numero': valA = a.numero; valB = b.numero; break;
+        case 'status': valA = a.status; valB = b.status; break;
+        case 'data': valA = new Date(a.data_abastecimento).getTime(); valB = new Date(b.data_abastecimento).getTime(); break;
+        case 'fazenda': valA = a.fazenda?.nome || ''; valB = b.fazenda?.nome || ''; break;
+        case 'veiculo': valA = a.veiculo_nome || ''; valB = b.veiculo_nome || ''; break;
+        case 'volume': valA = a.volume; valB = b.volume; break;
+        case 'marcador': valA = Number(a.leitura_marcador) || 0; valB = Number(b.leitura_marcador) || 0; break;
+        case 'usuario':
+          valA = a.usuario?.nome || usuarios.find(u => u.id === a.usuario_id)?.nome || '';
+          valB = b.usuario?.nome || usuarios.find(u => u.id === b.usuario_id)?.nome || '';
+          break;
+        case 'operador': valA = a.operador || ''; valB = b.operador || ''; break;
+        default: return 0;
+      }
 
-    if (filterFazenda && a.fazenda_id !== filterFazenda) return false;
-    if (filterPosto && a.posto_id !== filterPosto) return false;
-    if (filterUser && a.usuario_id !== filterUser) return false;
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredList, sortConfig, usuarios]);
 
-    if (filterStartDate || filterEndDate) {
-      const date = parseISO(a.data_abastecimento);
-      if (filterStartDate && date < parseISO(filterStartDate + 'T00:00:00')) return false;
-      if (filterEndDate && date > parseISO(filterEndDate + 'T23:59:59')) return false;
-    }
+  // Let's target specific vars instead.
 
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      return (
-        a.numero.toString().includes(s) ||
-        (a.veiculo_nome || '').toLowerCase().includes(s) ||
-        a.operador.toLowerCase().includes(s)
-      );
-    }
-    return true;
-  });
-
-  const sortedList = [...filteredList].sort((a, b) => {
-    if (!sortConfig) return 0;
-    const { key, direction } = sortConfig;
-    let valA: any = a;
-    let valB: any = b;
-
-    switch (key) {
-      case 'numero':
-        valA = a.numero;
-        valB = b.numero;
-        break;
-      case 'status':
-        valA = a.status;
-        valB = b.status;
-        break;
-      case 'data':
-        valA = new Date(a.data_abastecimento).getTime();
-        valB = new Date(b.data_abastecimento).getTime();
-        break;
-      case 'fazenda':
-        valA = a.fazenda?.nome || '';
-        valB = b.fazenda?.nome || '';
-        break;
-      case 'veiculo':
-        valA = a.veiculo_nome || '';
-        valB = b.veiculo_nome || '';
-        break;
-      case 'volume':
-        valA = a.volume;
-        valB = b.volume;
-        break;
-      case 'marcador':
-        valA = Number(a.leitura_marcador) || 0;
-        valB = Number(b.leitura_marcador) || 0;
-        break;
-      case 'usuario':
-        valA = a.usuario?.nome || usuarios.find((u) => u.id === a.usuario_id)?.nome || '';
-        valB = b.usuario?.nome || usuarios.find((u) => u.id === b.usuario_id)?.nome || '';
-        break;
-      case 'operador':
-        valA = a.operador || '';
-        valB = b.operador || '';
-        break;
-      default:
-        return 0;
-    }
-
-    if (valA < valB) return direction === 'asc' ? -1 : 1;
-    if (valA > valB) return direction === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  const pendenciasCount = abastecimentos.filter((a) => a.status === 'PENDENTE').length;
-  const pendenciasVolume = abastecimentos
+  const pendenciasCount = visibleAbastecimentos.filter((a) => a.status === 'PENDENTE').length;
+  const pendenciasVolume = visibleAbastecimentos
     .filter((a) => a.status === 'PENDENTE')
     .reduce((acc, curr) => acc + curr.volume, 0);
 
-  const totalLitros = abastecimentos.reduce((acc, curr) => acc + curr.volume, 0); // Total Global
-  const totalRegistros = abastecimentos.length; // Total Global
+  const totalLitros = visibleAbastecimentos.reduce((acc, curr) => acc + curr.volume, 0);
+  const totalRegistros = visibleAbastecimentos.length;
+
+  const handleBulkRepair = async () => {
+    if (!window.confirm('Deseja buscar novamente dados técnicos (Fuel ID, Reservatórios) para TODOS os registros integrados incompletos?\n\nIsso pode levar alguns segundos.')) return;
+
+    setIsRepairing(true);
+    try {
+      const { nuntecService } = await import('../services/nuntecService');
+      const result = await nuntecService.repairAllMissingData();
+
+      if (result.total === 0) {
+        alert('Todos os registros integrados já parecem estar completos!');
+      } else {
+        alert(`Processo Finalizado!\n\n🔍 Analisados: ${result.total}\n✅ Corrigidos: ${result.fixed}\n⚠️ Erros/Sem Dados: ${result.errors}`);
+        // Force reload
+        loadData();
+      }
+    } catch (error: any) {
+      alert('Erro ao processar reparo em massa: ' + error.message);
+    } finally {
+      setIsRepairing(false);
+    }
+  };
 
   const clearFilters = () => {
-    setFilterFazenda('');
-    setFilterPosto('');
-    setFilterUser('');
+    setFilterVeiculo('');
+    setFilterSemMedidor(false);
     setFilterStartDate('');
     setFilterEndDate('');
     setSearchTerm('');
     setActiveFilter('ALL');
   };
 
+  /* Logic for breakdown by Posto (Pending only) used in the new interactive card */
+  const breakdownData = useMemo(() => {
+    const acc: Record<string, { volume: number; count: number; label: string; id: string }> = {};
+
+    visibleAbastecimentos.filter(a => a.status === 'PENDENTE').forEach(a => {
+      const fazenda = a.fazenda?.nome || 'N/A';
+      const posto = a.posto?.nome || 'N/A';
+      const pid = a.posto_id;
+      // Use ID as key if available
+      const key = pid || `${fazenda}-${posto}`;
+
+      if (!acc[key]) {
+        acc[key] = {
+          volume: 0,
+          count: 0,
+          label: `${fazenda} • ${posto}`,
+          id: pid || key
+        };
+      }
+      acc[key].volume += a.volume;
+      acc[key].count += 1;
+    });
+    return Object.values(acc).sort((a, b) => b.volume - a.volume);
+  }, [abastecimentos]);
+
+  /* Logic for Nuntec Breakdown by Posto (Integration) */
+  const nuntecBreakdown = useMemo(() => {
+    const acc: Record<number, { volume: number; count: number; label: string; id: number }> = {};
+    pendenciasNuntec.filter(p => !ignoredIds.has(p.id)).forEach(t => {
+      const resId = Number(t['pointing-in']['reservoir-id']);
+      if (!resId) return;
+      const posto = postos.find(p => Number(p.nuntec_reservoir_id) === resId);
+      const nomeFazenda = posto?.fazenda?.nome || 'N/A';
+      const nomePosto = posto?.nome || `ID ${resId}`;
+      const label = `${nomeFazenda} • ${nomePosto}`;
+
+      if (!acc[resId]) {
+        acc[resId] = { volume: 0, count: 0, label, id: resId };
+      }
+      acc[resId].volume += Math.abs(t['pointing-in'].amount);
+      acc[resId].count += 1;
+    });
+    return Object.values(acc).sort((a, b) => b.volume - a.volume);
+  }, [pendenciasNuntec, postos, fazendas, ignoredIds]);
+
+  const nuntecVolumeTotal = useMemo(() => {
+    return pendenciasNuntec
+      .filter(p => !ignoredIds.has(p.id))
+      .reduce((acc, curr) => acc + Math.abs(curr['pointing-in'].amount), 0);
+  }, [pendenciasNuntec, ignoredIds]);
+
   const hasActiveFilters =
-    filterFazenda ||
-    filterPosto ||
-    filterUser ||
+    filterVeiculo ||
+    filterSemMedidor ||
     filterStartDate ||
     filterEndDate ||
     searchTerm ||
     activeFilter === 'PENDENTE';
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center text-blue-600">
-        Carregando dados...
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <PageHeader
+            title="Baixas de Combustível"
+            subtitle="Controle de saída de combustível e pendências manuais"
+            icon={Fuel}
+          >
+            <button className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl opacity-50 cursor-not-allowed">
+              <Plus size={20} /> Baixar Combustível
+            </button>
+          </PageHeader>
+          <StatsSkeleton count={3} />
+          <TableSkeleton rows={8} columns={7} />
+        </div>
       </div>
     );
+  }
 
   return (
     <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">
@@ -452,7 +565,18 @@ export function FuelingList() {
             <Plus size={20} /> Baixar Combustível
           </button>
         )}
+        {/* <button
+          onClick={handleBulkRepair}
+          disabled={isRepairing}
+          className={`flex items-center gap-2 px-4 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all font-semibold shadow-sm ${isRepairing ? 'opacity-50 cursor-wait' : ''}`}
+          title="Tentar recuperar dados técnicos (Fuel ID) de registros antigos"
+        >
+          <RefreshCw size={20} className={`text-blue-500 ${isRepairing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Reparar Dados</span>
+        </button> */}
       </PageHeader>
+
+
 
       {/* View Toggle */}
       <div className="flex items-center gap-4 border-b border-slate-200">
@@ -473,37 +597,69 @@ export function FuelingList() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setViewMode('AUDIT')}
+          className={`pb-3 px-4 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${viewMode === 'AUDIT' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          <ShieldCheck size={16} /> Auditoria
+        </button>
       </div>
 
-      {viewMode === 'LOCAL' ? (
+      {viewMode === 'AUDIT' ? (
+        <ComplianceDashboard
+          abastecimentos={abastecimentos}
+          fazendas={fazendas}
+          postos={postos}
+          userFazendaId={user?.fazenda_id}
+          canViewAllFarms={canViewAllFarms}
+        />
+      ) : viewMode === 'LOCAL' ? (
         <>
-          {/* KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <StatsCard
-              title="VOLUME TOTAL"
-              value={`${totalLitros.toFixed(0)} L`}
-              icon={Droplet}
-              description="litros consumidos"
-              variant={activeFilter === 'ALL' ? 'green' : 'default'}
-              onClick={() => setActiveFilter('ALL')}
-              className={`hover:bg-green-50 ${activeFilter === 'ALL' ? 'ring-2 ring-green-200 bg-green-50' : ''}`}
-            />
-            <StatsCard
-              title="REGISTROS"
-              value={totalRegistros}
-              icon={FileText}
-              description="abastecimentos realizados"
-              variant="blue"
-            />
-            <StatsCard
-              title="PENDÊNCIAS"
-              value={pendenciasCount}
-              icon={AlertTriangle}
-              description={`${pendenciasVolume.toFixed(0)} litros pendentes`}
-              variant={activeFilter === 'PENDENTE' ? 'orange' : 'default'}
-              onClick={() => setActiveFilter(activeFilter === 'PENDENTE' ? 'ALL' : 'PENDENTE')}
-              className={`hover:bg-orange-50 ${activeFilter === 'PENDENTE' ? 'ring-2 ring-orange-200 bg-orange-50' : ''}`}
-            />
+          {/* KPIs - Single Interactive Breakdown Card */}
+          {/* ... existing content ... */}
+          {/* Custom Card: Volume Breakdown by Posto (Pending) - Full Width */}
+          <div className="bg-white rounded-2xl p-6 border-2 border-slate-200 shadow-sm flex flex-col justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg text-green-600">
+                  <Droplet size={24} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Vol. Pendente por Posto</p>
+                  <p className="text-xs text-slate-400 font-medium">clique no posto para filtrar a lista</p>
+                </div>
+              </div>
+              <div
+                className={`text-right cursor-pointer hover:opacity-80 transition-opacity ${!selectedPostoId ? 'text-green-600' : 'text-slate-400'}`}
+                onClick={() => setSelectedPostoId(null)} // Click total to clear filter
+                title="Limpar filtro de posto"
+              >
+                <span className="text-3xl font-bold">{pendenciasVolume.toFixed(0)} <span className="text-base font-medium">Total</span></span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
+              {breakdownData.length > 0 ? (
+                breakdownData.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedPostoId(selectedPostoId === item.id ? null : item.id)}
+                    className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
+                        ${selectedPostoId === item.id
+                        ? 'bg-green-50 border-green-200 ring-1 ring-green-200 shadow-sm'
+                        : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden flex-1">
+                      <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedPostoId === item.id ? 'bg-green-200 text-green-800' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
+                      <span className={`font-medium truncate text-xs ${selectedPostoId === item.id ? 'text-green-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
+                    </div>
+                    <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedPostoId === item.id ? 'text-green-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência de volume.</div>
+              )}
+            </div>
           </div>
 
           {/* Filters */}
@@ -539,61 +695,32 @@ export function FuelingList() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <Building2 size={12} /> Filial
+                    <Truck size={12} /> Veículo
                   </label>
                   <select
                     className="w-full text-sm rounded-xl border-slate-200 bg-white py-2"
-                    value={filterFazenda}
-                    onChange={(e) => {
-                      setFilterFazenda(e.target.value);
-                      setFilterPosto('');
-                    }}
+                    value={filterVeiculo}
+                    onChange={(e) => setFilterVeiculo(e.target.value)}
                   >
-                    <option value="">Todas</option>
-                    {fazendas.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.nome}
+                    <option value="">Todos</option>
+                    {uniqueVehicles.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
                       </option>
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <MapPin size={12} /> Posto
+
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl w-full hover:bg-slate-100 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={filterSemMedidor}
+                      onChange={(e) => setFilterSemMedidor(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-semibold text-slate-600">Apenas Sem Medidor</span>
                   </label>
-                  <select
-                    className="w-full text-sm rounded-xl border-slate-200 bg-white py-2"
-                    value={filterPosto}
-                    onChange={(e) => setFilterPosto(e.target.value)}
-                  >
-                    <option value="">Todos</option>
-                    {postos
-                      .filter((p) => !filterFazenda || p.fazenda_id === filterFazenda)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nome}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <User size={12} /> Usuário
-                  </label>
-                  <select
-                    className="w-full text-sm rounded-xl border-slate-200 bg-white py-2"
-                    value={filterUser}
-                    onChange={(e) => setFilterUser(e.target.value)}
-                  >
-                    <option value="">Todos</option>
-                    {usuarios
-                      .filter((u) => availableUserIds.has(u.id))
-                      .map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.nome}
-                        </option>
-                      ))}
-                  </select>
                 </div>
               </>
             }
@@ -827,55 +954,74 @@ export function FuelingList() {
       ) : (
         // --- INTEGRATION VIEW ---
         <div className="space-y-6">
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-white rounded-xl shadow-sm text-amber-600">
-                <Link size={24} />
+          {/* Nuntec Interactive Card - Replaces Old Header */}
+          <div className="bg-white rounded-2xl p-6 border-2 border-amber-200 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+                  <Link size={24} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Pendências Nuntec</p>
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    <p className="text-[10px] text-slate-400 leading-tight hidden sm:block">
+                      Transf. para "Gerente" aguardando dados.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 font-medium">
+                      <span className="flex items-center gap-1" title="Última atualização">
+                        <RefreshCw size={10} /> Atualizado: {lastUpdate ? format(lastUpdate, 'HH:mm') : '-'}
+                      </span>
+                      <span className="flex items-center gap-1" title="Período de sincronização">
+                        <Calendar size={10} /> Período: {syncStartDate ? `A partir de ${format(parseISO(syncStartDate), 'dd/MM/yyyy')}` : 'Padrão'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-amber-900">Integração Nuntec</h3>
-                <p className="text-sm text-amber-700">
-                  Abastecimentos transferidos para reservatórios monitorados ("Gerente") que
-                  precisam de dados complementares.
-                </p>
 
-                <div className="flex items-center gap-4 mt-2 text-xs text-amber-800/70 border-t border-amber-200/50 pt-2">
-                  <span className="flex items-center gap-1.5" title="Momento da última verificação">
-                    <RefreshCw size={12} />
-                    Atualizado: {lastUpdate ? format(lastUpdate, 'HH:mm') : '-'}
-                  </span>
-                  <span
-                    className="flex items-center gap-1.5"
-                    title="Data de corte configurada para sincronização"
+              <div className="text-right">
+                <div className="flex flex-col items-end">
+                  <button
+                    onClick={() => setShowIgnored(!showIgnored)}
+                    className={`text-[10px] flex items-center gap-1 px-2 py-1 rounded border mb-1 transition-colors ${showIgnored ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                      }`}
                   >
-                    <Calendar size={12} />
-                    Período:{' '}
-                    {syncStartDate
-                      ? `A partir de ${format(parseISO(syncStartDate), 'dd/MM/yyyy')}`
-                      : 'Padrão'}
-                  </span>
+                    {showIgnored ? <EyeOff size={10} /> : <Eye size={10} />}
+                    {showIgnored ? 'Ocultar Ignorados' : 'Ver Ignorados'}
+                  </button>
+                  <div
+                    className={`cursor-pointer hover:opacity-80 transition-opacity ${!selectedNuntecReservoirId ? 'text-amber-600' : 'text-slate-400'}`}
+                    onClick={() => setSelectedNuntecReservoirId(null)}
+                    title="Limpar filtro"
+                  >
+                    <span className="text-3xl font-bold">{nuntecVolumeTotal.toFixed(0)} <span className="text-base font-medium">L</span></span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="text-right flex flex-col items-end">
-              <span className="block text-2xl font-bold text-amber-900">
-                {pendenciasNuntec.filter((p) => !ignoredIds.has(p.id)).length}
-              </span>
-              <span className="text-xs font-semibold text-amber-600 uppercase mb-2">
-                Pendências Requerem Atenção
-              </span>
 
-              <button
-                onClick={() => setShowIgnored(!showIgnored)}
-                className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all ${
-                  showIgnored
-                    ? 'bg-slate-800 text-white border-slate-700'
-                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                {showIgnored ? <EyeOff size={12} /> : <Eye size={12} />}
-                {showIgnored ? 'Ocultar Ignorados' : 'Ver Ignorados'}
-              </button>
+            {/* Grid de Postos Nuntec */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
+              {nuntecBreakdown.length > 0 ? (
+                nuntecBreakdown.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedNuntecReservoirId(selectedNuntecReservoirId === item.id ? null : item.id)}
+                    className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
+                        ${selectedNuntecReservoirId === item.id
+                        ? 'bg-amber-50 border-amber-200 ring-1 ring-amber-200 shadow-sm'
+                        : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden flex-1">
+                      <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedNuntecReservoirId === item.id ? 'bg-amber-200 text-amber-900' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
+                      <span className={`font-medium truncate text-xs ${selectedNuntecReservoirId === item.id ? 'text-amber-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
+                    </div>
+                    <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedNuntecReservoirId === item.id ? 'text-amber-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência encontrada.</div>
+              )}
             </div>
           </div>
 
@@ -940,6 +1086,10 @@ export function FuelingList() {
                     } else {
                       if (isIgnored) return null;
                     }
+
+                    // Nuntec Station Filter
+                    const rowResId = Number(t['pointing-in']['reservoir-id']);
+                    if (selectedNuntecReservoirId && rowResId !== selectedNuntecReservoirId) return null;
 
                     // Find Posto Name
                     const posto = postos.find(
@@ -1041,7 +1191,8 @@ export function FuelingList() {
             </table>
           </div>
         </div>
-      )}
+      )
+      }
 
       <FuelingFormModal
         isOpen={isFormOpen}
@@ -1057,58 +1208,62 @@ export function FuelingList() {
         onClose={() => setIsDetailsOpen(false)}
         onConfirm={
           selectedItem &&
-          checkAccess({
-            module: MODULE_KEY,
-            action: 'confirm',
-            resourceOwnerId: selectedItem.usuario_id,
-            resourceStatus: selectedItem.status,
-          })
-            ? () => selectedItem && handleConfirm(selectedItem)
+            checkAccess({
+              module: MODULE_KEY,
+              action: 'confirm',
+              resourceOwnerId: selectedItem.usuario_id,
+              resourceStatus: selectedItem.status,
+            })
+            ? (nuntecId?: string) => selectedItem && handleConfirm(selectedItem, nuntecId)
             : undefined
         }
         data={
           selectedItem
             ? {
-                ...selectedItem,
-                usuario: selectedItem.usuario || {
-                  nome:
-                    usuarios.find((u) => u.id === selectedItem.usuario_id)?.nome || 'Desconhecido',
-                },
-              }
+              ...selectedItem,
+              usuario: selectedItem.usuario || {
+                nome:
+                  usuarios.find((u) => u.id === selectedItem.usuario_id)?.nome || 'Desconhecido',
+              },
+            }
             : undefined
         }
       />
 
-      {resolutionTransfer && (
-        <FuelingResolutionModal
-          isOpen={isResolutionOpen}
-          onClose={() => {
-            setIsResolutionOpen(false);
-            setResolutionTransfer(undefined);
-          }}
-          onResolve={handleResolveSuccess}
-          transfer={resolutionTransfer}
-          fazendas={fazendas}
-          postos={postos}
-        />
-      )}
+      {
+        resolutionTransfer && (
+          <FuelingResolutionModal
+            isOpen={isResolutionOpen}
+            onClose={() => {
+              setIsResolutionOpen(false);
+              setResolutionTransfer(undefined);
+            }}
+            onResolve={handleResolveSuccess}
+            transfer={resolutionTransfer}
+            fazendas={fazendas}
+            postos={postos}
+          />
+        )
+      }
 
-      {showHistory && historyId && (
-        <AuditLogModal
-          isOpen={showHistory}
-          onClose={() => {
-            setShowHistory(false);
-            setHistoryId(null);
-          }}
-          registroId={historyId}
-          useSimpleFetch={true}
-        />
-      )}
+      {
+        showHistory && historyId && (
+          <AuditLogModal
+            isOpen={showHistory}
+            onClose={() => {
+              setShowHistory(false);
+              setHistoryId(null);
+            }}
+            registroId={historyId}
+            useSimpleFetch={true}
+          />
+        )
+      }
 
       <VehicleManagementModal
         isOpen={isFleetModalOpen}
         onClose={() => setIsFleetModalOpen(false)}
       />
-    </div>
+    </div >
   );
 }

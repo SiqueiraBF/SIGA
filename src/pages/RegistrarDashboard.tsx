@@ -24,6 +24,8 @@ import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 
+import { StatsSkeleton } from '../components/ui/StatsSkeleton';
+
 export function RegistrarDashboard() {
   const { user, hasPermission } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,6 +36,7 @@ export function RegistrarDashboard() {
   const [filteredRequests, setFilteredRequests] = useState<Solicitacao[]>([]);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // Filtros de Card Interativos
   const [activeFilter, setActiveFilter] = useState<
@@ -76,7 +79,9 @@ export function RegistrarDashboard() {
         }),
       );
       setItemCounts(counts);
+      setItemCounts(counts);
     }
+    setLoading(false);
   };
 
   const applyFilters = () => {
@@ -166,6 +171,34 @@ export function RegistrarDashboard() {
 
   const hasActiveFilters = searchTerm || activeFilter !== 'ALL';
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto space-y-6 pb-20">
+        <PageHeader
+          title="Análise de Cadastros"
+          subtitle="Gerencie solicitações pendentes e realize cadastros"
+          icon={ClipboardList}
+        />
+        <StatsSkeleton count={4} />
+        {/* Simulating card list with TableSkeleton for now, or we could customize */}
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-2xl p-6 border border-slate-200 h-40 animate-pulse">
+              <div className="flex gap-4">
+                <div className="w-16 h-16 bg-slate-200 rounded-2xl"></div>
+                <div className="flex-1 space-y-3">
+                  <div className="w-1/3 h-4 bg-slate-200 rounded"></div>
+                  <div className="w-1/2 h-3 bg-slate-100 rounded"></div>
+                  <div className="w-1/4 h-3 bg-slate-100 rounded"></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-20 animate-in fade-in duration-500">
       <PageHeader
@@ -254,20 +287,18 @@ export function RegistrarDashboard() {
             return (
               <div
                 key={request.id}
-                className={`bg-white rounded-2xl p-0 border-2 transition-all cursor-pointer hover:shadow-lg overflow-hidden group ${
-                  isUrgent
-                    ? 'border-red-100 hover:border-red-300'
-                    : 'border-slate-200 hover:border-blue-300'
-                }`}
+                className={`bg-white rounded-2xl p-0 border-2 transition-all cursor-pointer hover:shadow-lg overflow-hidden group ${isUrgent
+                  ? 'border-red-100 hover:border-red-300'
+                  : 'border-slate-200 hover:border-blue-300'
+                  }`}
                 onClick={() => handleOpenRequest(request.id)}
               >
                 <div className="p-6 flex flex-col md:flex-row items-start gap-6">
                   <div
-                    className={`flex-shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center border shadow-sm ${
-                      isUrgent
-                        ? 'bg-red-50 border-red-100 text-red-600'
-                        : 'bg-blue-50 border-blue-100 text-blue-600'
-                    }`}
+                    className={`flex-shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center border shadow-sm ${isUrgent
+                      ? 'bg-red-50 border-red-100 text-red-600'
+                      : 'bg-blue-50 border-blue-100 text-blue-600'
+                      }`}
                   >
                     <span className="text-[10px] font-bold uppercase tracking-wider">SC</span>
                     <span className="text-2xl font-bold leading-none">#{request.numero}</span>
@@ -307,11 +338,10 @@ export function RegistrarDashboard() {
                         e.stopPropagation();
                         handleOpenRequest(request.id);
                       }}
-                      className={`w-full md:w-auto px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 ${
-                        request.status === 'Aguardando'
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      }`}
+                      className={`w-full md:w-auto px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 ${request.status === 'Aguardando'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
                     >
                       {request.status === 'Aguardando' ? (
                         <Play size={16} fill="currentColor" />

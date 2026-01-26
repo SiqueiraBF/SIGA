@@ -1,5 +1,6 @@
 import { db } from '../services/supabaseService';
 import { format } from 'date-fns';
+import { formatInSystemTime } from '../utils/dateUtils';
 import { Clock, User, Edit, Plus, Trash, ArrowRight, Fuel } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { AuditLog, Fazenda, Usuario, Funcao } from '../types';
@@ -125,7 +126,7 @@ export function AuditLogModal({
     // Format dates
     if (typeof value === 'string' && value.includes('T') && value.includes('Z')) {
       try {
-        return format(new Date(value), 'dd/MM/yyyy HH:mm');
+        return formatInSystemTime(value);
       } catch {
         return value;
       }
@@ -347,7 +348,7 @@ export function AuditLogModal({
                             <User size={12} />
                             <span>{user?.nome || 'Sistema'}</span>
                             <span>•</span>
-                            <span>{format(new Date(log.data_hora), 'dd/MM/yyyy HH:mm:ss')}</span>
+                            <span>{formatInSystemTime(log.data_hora, 'dd/MM/yyyy HH:mm:ss')}</span>
                           </p>
                         </div>
                       </div>

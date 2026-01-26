@@ -25,6 +25,7 @@ export function StationFormModal({
   const [fazendaId, setFazendaId] = useState('');
   const [ativo, setAtivo] = useState(true);
   const [nuntecReservoirId, setNuntecReservoirId] = useState('');
+  const [tipo, setTipo] = useState<'FISICO' | 'VIRTUAL'>('FISICO');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -34,11 +35,13 @@ export function StationFormModal({
         setFazendaId(initialData.fazenda_id);
         setAtivo(initialData.ativo !== false);
         setNuntecReservoirId(initialData.nuntec_reservoir_id || '');
+        setTipo(initialData.tipo || 'FISICO');
       } else {
         setNome('');
         setFazendaId('');
         setAtivo(true);
         setNuntecReservoirId('');
+        setTipo('FISICO');
       }
     }
   }, [isOpen, initialData]);
@@ -47,7 +50,7 @@ export function StationFormModal({
     e.preventDefault();
     setLoading(true);
     try {
-      await onSave({ nome, fazenda_id: fazendaId, ativo, nuntec_reservoir_id: nuntecReservoirId });
+      await onSave({ nome, fazenda_id: fazendaId, ativo, nuntec_reservoir_id: nuntecReservoirId, tipo });
       onClose();
     } catch (error: any) {
       console.error('Erro ao salvar posto:', error);
@@ -104,16 +107,52 @@ export function StationFormModal({
               </select>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={ativo}
-                  onChange={(e) => setAtivo(e.target.checked)}
-                  className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                />
-                <span className="text-sm font-medium text-slate-700">Posto Ativo</span>
-              </label>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Tipo de Posto
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTipo('FISICO')}
+                    className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-xl border transition-all ${tipo === 'FISICO'
+                      ? 'bg-blue-50 border-blue-200 text-blue-700 ring-1 ring-blue-200'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                      }`}
+                  >
+                    <div className="p-1.5 rounded-full bg-white/50">
+                      <Building2 size={16} />
+                    </div>
+                    <span className="text-xs font-bold">Físico (Tanque)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipo('VIRTUAL')}
+                    className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-xl border transition-all ${tipo === 'VIRTUAL'
+                      ? 'bg-sky-50 border-sky-200 text-sky-700 ring-1 ring-sky-200'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                      }`}
+                  >
+                    <div className="p-1.5 rounded-full bg-white/50">
+                      <Building2 size={16} /> {/* Could use Cloud here if imported */}
+                    </div>
+                    <span className="text-xs font-bold">Virtual (Gerencial)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-8">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={ativo}
+                    onChange={(e) => setAtivo(e.target.checked)}
+                    className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Posto Ativo</span>
+                </label>
+              </div>
             </div>
 
             <div className="pt-4 border-t border-slate-100 mt-2">

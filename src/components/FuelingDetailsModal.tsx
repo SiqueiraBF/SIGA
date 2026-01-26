@@ -1,5 +1,5 @@
 import React from 'react';
-import { Truck, Calendar, User, Gauge, Activity, Sprout, CheckCircle2 } from 'lucide-react';
+import { Truck, Calendar, User, Gauge, Activity, Sprout, CheckCircle2, AlertTriangle } from 'lucide-react';
 import type { Abastecimento } from '../types';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -11,7 +11,7 @@ import { ModalFooter } from './ui/ModalFooter';
 interface FuelingDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm?: () => void;
+  onConfirm?: (nuntecId?: string) => void;
   data?: Abastecimento;
 }
 
@@ -29,7 +29,7 @@ export function FuelingDetailsModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden my-8"
+        className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-8"
         onClick={(e) => e.stopPropagation()}
       >
         <ModalHeader
@@ -46,110 +46,186 @@ export function FuelingDetailsModal({
           onClose={onClose}
         />
 
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-          {/* Status Badge */}
-          <div className="flex justify-center">
-            <span
-              className={`px-4 py-1.5 text-xs font-bold rounded-full uppercase border tracking-wider ${
-                data.status === 'PENDENTE'
-                  ? 'bg-amber-100 text-amber-700 border-amber-200'
-                  : 'bg-green-100 text-green-700 border-green-200'
-              }`}
-            >
-              {data.status === 'PENDENTE' ? '⏳ Pendente de Baixa' : '✅ Baixado / Concluído'}
-            </span>
-          </div>
+        {/* Compliance Alerts */}
+        {(data.is_manager_mode || data.tipo_marcador === 'SEM_MEDIDOR') && (
+          <div className="px-6 pt-6 -mb-4 space-y-2">
 
-          {/* Metadata: User Launched */}
-          <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 p-2 rounded-lg justify-center border border-slate-100">
-            <User size={14} />
-            <span>
-              Lançado por:{' '}
-              <span className="font-semibold text-slate-700">
-                {data.usuario?.nome || 'Sistema'}
-              </span>
-            </span>
-          </div>
-
-          {/* Main Highlight: Volume */}
-          <div className="bg-slate-50 rounded-xl p-6 border border-slate-100 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-blue-600"></div>
-            <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">
-              Volume Abastecido
-            </p>
-            <div className="text-5xl font-bold text-slate-800 tracking-tight flex items-center justify-center gap-1">
-              {data.volume.toFixed(2)}{' '}
-              <span className="text-xl text-slate-400 font-medium self-end mb-2">L</span>
-            </div>
-          </div>
-
-          {/* Critical Info for Nuntec (Highlighted) */}
-          <div className="bg-blue-50/50 rounded-xl p-5 border border-blue-100 space-y-4">
-            <div className="flex items-center gap-3 border-b border-blue-100 pb-3">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-sm border border-blue-200">
-                <User size={20} />
+            {/* Manager Mode Alert */}
+            {data.is_manager_mode && (
+              <div className="bg-red-50 border border-red-100 p-3 rounded-lg flex items-start gap-3">
+                <AlertTriangle size={18} className="text-red-600 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-red-800 uppercase tracking-wide">
+                    Atenção: Modo Gerente (Exceção)
+                  </p>
+                  <p className="text-sm text-red-700 font-medium">
+                    Motivo: <span className="font-bold">{data.manager_mode_reason}</span>
+                    {data.manager_mode_reason === 'OUTROS' && data.manager_mode_description && (
+                      <span className="font-normal italic ml-1">- "{data.manager_mode_description}"</span>
+                    )}
+                  </p>
+                </div>
               </div>
+            )}
+
+            {/* No Meter Alert */}
+            {data.tipo_marcador === 'SEM_MEDIDOR' && (
+              <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg flex items-start gap-3">
+                <AlertTriangle size={18} className="text-amber-600 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">
+                    Registro Sem Medidor
+                  </p>
+                  <p className="text-sm text-amber-700 font-medium">
+                    Motivo: <span className="font-bold">{data.motivo_sem_marcador === 'NAO_POSSUI' ? 'Não Possui Equipamento' : data.motivo_sem_marcador}</span>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+
+          {/* Header Summary Box (Similar to Nuntec Resolution) */}
+          <div className={`rounded-xl p-5 border shadow-sm ${data.status === 'PENDENTE'
+            ? 'bg-amber-50 border-amber-100'
+            : 'bg-green-50 border-green-100'
+            }`}>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-y-4 gap-x-8">
               <div>
-                <p className="text-[10px] text-blue-500 uppercase font-bold tracking-wide">
-                  Operador (Responsável)
+                <p className={`text-[10px] font-bold uppercase mb-1 tracking-wide ${data.status === 'PENDENTE' ? 'text-amber-700' : 'text-green-700'
+                  }`}>ID Nuntec</p>
+                <p className="text-sm font-bold text-slate-800 font-mono">
+                  {data.nuntec_generated_id || '-'}
                 </p>
-                <p className="text-lg font-bold text-slate-800 leading-tight">{data.operador}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="flex items-center gap-1.5 text-blue-500 font-bold text-[10px] uppercase mb-1">
-                  <Activity size={12} /> Operação
-                </p>
-                <p className="font-bold text-slate-700 bg-white/50 px-2 py-1 rounded border border-blue-100/50 text-sm">
-                  {data.operacao}
-                </p>
-              </div>
-              <div>
-                <p className="flex items-center gap-1.5 text-blue-500 font-bold text-[10px] uppercase mb-1">
-                  <Sprout size={12} /> Cultura
-                </p>
-                <p className="font-bold text-slate-700 bg-white/50 px-2 py-1 rounded border border-blue-100/50 text-sm">
-                  {data.cultura}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Technical Info (Vehicle + Markers) */}
-          <div className="grid grid-cols-2 gap-4 text-sm pt-4 border-t border-slate-100">
-            {/* Column 1: Vehicle & Origin */}
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase">
-                  <Truck size={12} /> Veículo
-                </p>
-                <p className="font-bold text-slate-700 leading-tight text-base">
-                  {data.veiculo_nome || `ID: ${data.veiculo_id}`}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Origem</p>
-                <p className="font-semibold text-slate-700 text-sm">{data.fazenda?.nome}</p>
-                <p className="text-slate-500 text-xs">{data.posto?.nome}</p>
-              </div>
-            </div>
-
-            {/* Column 2: Odometer Reading */}
-            <div className="space-y-1 bg-slate-50 rounded-xl p-3 h-fit border border-slate-100">
-              <p className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase mb-1">
-                <Gauge size={12} /> Leitura ({data.tipo_marcador === 'ODOMETRO' ? 'KM' : 'HORAS'})
-              </p>
-              <p className="text-xl font-mono font-bold text-slate-800 tracking-tight">
-                {data.tipo_marcador === 'SEM_MEDIDOR' ? (
-                  <span className="text-red-500 text-xs font-sans italic">
-                    {data.motivo_sem_marcador}
-                  </span>
-                ) : (
-                  data.leitura_marcador
+                {data.nuntec_transfer_id && (
+                  <p className="text-[10px] text-slate-500 font-mono mt-1" title="ID da Transferência (Origem)">
+                    Transf: {data.nuntec_transfer_id}
+                  </p>
                 )}
-              </p>
+              </div>
+              <div>
+                <p className={`text-[10px] font-bold uppercase mb-1 tracking-wide ${data.status === 'PENDENTE' ? 'text-amber-700' : 'text-green-700'
+                  }`}>Data Transferência</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  {format(parseISO(data.data_abastecimento), "dd/MM/yyyy, HH:mm")}
+                </p>
+              </div>
+              <div>
+                <p className={`text-[10px] font-bold uppercase mb-1 tracking-wide ${data.status === 'PENDENTE' ? 'text-amber-700' : 'text-green-700'
+                  }`}>Origem (Posto)</p>
+                <p className="text-sm font-semibold text-slate-900 leading-tight">{data.posto?.nome || 'N/A'}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{data.fazenda?.nome}</p>
+                {data.posto?.nuntec_reservoir_id && (
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    (Reservatório ID: {data.posto.nuntec_reservoir_id})
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className={`text-[10px] font-bold uppercase mb-1 tracking-wide ${data.status === 'PENDENTE' ? 'text-amber-700' : 'text-green-700'
+                  }`}>Volume</p>
+                <p className="text-lg font-bold text-slate-900">{data.volume.toFixed(2)} L</p>
+                {data.nuntec_fuel_id && (
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5" title="ID do Combustível (Técnico)">
+                    (Fuel ID: {data.nuntec_fuel_id})
+                  </p>
+                )}
+                {!data.nuntec_fuel_id && data.nuntec_transfer_id && onConfirm && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!window.confirm('Tentar buscar IDs técnicos (FuelID, etc) novamente na Nuntec?')) return;
+                      try {
+                        const { nuntecService } = await import('../services/nuntecService');
+                        const fixed = await nuntecService.repairFuelingData(data.id, data.nuntec_transfer_id!);
+                        if (fixed) {
+                          alert('Dados atualizados com sucesso! O modal será fechado para recarregar.');
+                          onClose();
+                        } else {
+                          alert('A Nuntec não retornou dados novos para esta transferência.');
+                        }
+                      } catch (err: any) {
+                        alert('Erro ao reparar: ' + err.message);
+                      }
+                    }}
+                    className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer mt-1 flex items-center gap-1"
+                  >
+                    🔄 Reparar Dados
+                  </button>
+                )}
+              </div>
+              <div>
+                <p className={`text-[10px] font-bold uppercase mb-1 tracking-wide ${data.status === 'PENDENTE' ? 'text-amber-700' : 'text-green-700'
+                  }`}>Operador</p>
+                <p className="text-sm font-semibold text-slate-900">{data.operador || 'N/A'}</p>
+                {data.nuntec_operator_id && (
+                  <p className={`text-[10px] font-mono mt-0.5 ${data.status === 'PENDENTE' ? 'text-amber-600' : 'text-green-600'}`}>
+                    (ID: {data.nuntec_operator_id})
+                  </p>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Left Column: Vehicle & Reading */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase border-b border-slate-100 pb-2">
+                <Truck size={14} /> Identificação do Veículo
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Veículo Selecionado</p>
+                  <p className="text-sm font-bold text-slate-700">{data.veiculo_nome || `ID: ${data.veiculo_id}`}</p>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">
+                    Leitura Atual ({data.tipo_marcador === 'ODOMETRO' ? 'KM' : 'HORAS'})
+                  </p>
+                  <p className="text-lg font-bold text-slate-800 font-mono">
+                    {data.tipo_marcador === 'SEM_MEDIDOR' ? (
+                      <span className="text-red-500 text-sm font-sans italic">{data.motivo_sem_marcador}</span>
+                    ) : (
+                      data.leitura_marcador
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Service Details */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase border-b border-slate-100 pb-2">
+                <Activity size={14} /> Detalhes do Serviço
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-500">Operação</label>
+                  <div className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm">
+                    {data.operacao || 'N/A'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-500">Cultura</label>
+                  <div className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm">
+                    {data.cultura || 'N/A'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Metadata Footer */}
+          <div className="pt-4 border-t border-slate-100 mt-4 text-center space-y-1">
+            <p className="text-xs text-slate-400">
+              Lançado por <span className="font-semibold text-slate-600">{data.usuario?.nome || 'Sistema'}</span>
+            </p>
+
           </div>
         </div>
 
@@ -160,23 +236,31 @@ export function FuelingDetailsModal({
           {data.status === 'PENDENTE' && onConfirm ? (
             <div className="w-full space-y-3">
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (
                     window.confirm(
-                      'Verificou os dados? Confirma que o lançamento foi realizado na Nuntec?',
+                      'Confirma o envio desta baixa para a Nuntec?\nCertifique-se que o Veículo, Operação e Cultura estão corretos.',
                     )
                   ) {
-                    onConfirm();
-                    onClose();
+                    try {
+                      // The service handles defaults. In a full implementation we should fetch/store these.
+                      const newId = await import('../services/nuntecService').then(m => m.nuntecService.createFueling(data));
+
+                      alert(`✅ Sucesso! Baixa enviada para Nuntec.\nID Gerado: ${newId}`);
+                      onConfirm(newId);
+                      onClose();
+                    } catch (error: any) {
+                      alert('Erro na integração Nuntec:\n' + error.message);
+                    }
                   }
                 }}
                 className="w-full py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-500/20 flex items-center justify-center gap-3 transition-all hover:scale-[1.01] active:scale-[0.99]"
               >
                 <CheckCircle2 size={24} />
-                CONFIRMAR BAIXA
+                CONFIRMAR BAIXA (INTEGRADO)
               </button>
               <p className="text-center text-[10px] text-slate-400 px-4">
-                Certifique-se de ter lançado Operador e Cultura no Nuntec antes de confirmar.
+                O comando será enviado diretamente para a API Nuntec.
               </p>
             </div>
           ) : (

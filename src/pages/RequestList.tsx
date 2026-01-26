@@ -19,10 +19,13 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { format, parseISO, startOfDay, endOfDay, isBefore, isAfter } from 'date-fns';
+import { formatInSystemTime } from '../utils/dateUtils';
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatsCard } from '../components/ui/StatsCard';
+import { TableSkeleton } from '../components/ui/TableSkeleton';
+import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -42,12 +45,13 @@ type SortField =
 type SortDirection = 'asc' | 'desc';
 
 export function RequestList() {
-  const { user, checkAccess } = useAuth();
+  const { user, checkAccess, role } = useAuth();
   const [requests, setRequests] = useState<Solicitacao[]>([]);
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,8 +71,8 @@ export function RequestList() {
   const [showOnlyMine, setShowOnlyMine] = useState(false);
 
   // ACL Checks
-  const canViewAll = checkAccess({ module: 'abrir_solicitacao', action: 'view' });
-  const isRestrictedToOwn = !canViewAll;
+  const viewScope = role?.permissoes?.['abrir_solicitacao']?.view_scope || 'OWN_ONLY';
+  const isRestrictedToOwn = viewScope === 'OWN_ONLY'; // Kept for legacy UI flag "Minhas SCs" toggle behavior if needed
 
   // Check if user can create (edit own pending items)
   const canCreate = checkAccess({
@@ -169,6 +173,8 @@ export function RequestList() {
       );
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -236,7 +242,8 @@ export function RequestList() {
   // 1. Base Filter (Context filters without status)
   const baseRequests = requests.filter((req) => {
     // ACL Enforcement: View Scope
-    if (isRestrictedToOwn && user && req.usuario_id !== user.id) return false;
+    if (viewScope === 'OWN_ONLY' && user && req.usuario_id !== user.id) return false;
+    if (viewScope === 'SAME_FARM' && user && req.fazenda_id !== user.fazenda_id) return false;
 
     // Search
     if (searchTerm) {
@@ -338,6 +345,28 @@ export function RequestList() {
     setFilterStatus(filterStatus === status ? '' : status);
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <PageHeader
+            title="Solicitações de Cadastro"
+            subtitle="Visualize e gerencie solicitações de todas as fazendas"
+            icon={LayoutDashboard}
+          >
+            <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg opacity-50 cursor-not-allowed">
+              <Plus size={20} />
+              Nova Solicitação
+            </button>
+          </PageHeader>
+
+          <StatsSkeleton count={role?.nome === 'Administrador' ? 5 : 4} />
+          <TableSkeleton rows={8} columns={6} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">
       {/* Header */}
@@ -421,8 +450,8 @@ export function RequestList() {
             <button
               onClick={() => setShowOnlyMine(!showOnlyMine)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm h-full ${showOnlyMine
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
             >
               {showOnlyMine ? '✅ Minhas SCs' : '👤 Minhas SCs'}
@@ -561,22 +590,6 @@ export function RequestList() {
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-center text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('items')}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    Itens <SortIcon field="items" />
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('prioridade')}
-                >
-                  <div className="flex items-center gap-2">
-                    Prioridade <SortIcon field="prioridade" />
-                  </div>
-                </th>
-                <th
                   className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
                   onClick={() => handleSort('status')}
                 >
@@ -614,9 +627,9 @@ export function RequestList() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-slate-700">
-                      {format(new Date(req.data_abertura), 'dd/MM/yyyy')}{' '}
+                      {formatInSystemTime(req.data_abertura, 'dd/MM/yyyy')}{' '}
                       <span className="text-slate-400 text-xs ml-1">
-                        {format(new Date(req.data_abertura), 'HH:mm')}
+                        {formatInSystemTime(req.data_abertura, 'HH:mm')}
                       </span>
                     </td>
                     <td className="px-6 py-4">

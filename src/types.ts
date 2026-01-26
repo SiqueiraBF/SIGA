@@ -8,7 +8,7 @@ export type Modulo =
   | 'abast_lancar'
   | 'abast_conferir';
 
-export type ViewScope = 'ALL' | 'OWN_ONLY' | 'NONE';
+export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
 export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
 
 export interface ModulePermission {
@@ -119,6 +119,49 @@ export interface Posto {
   ativo: boolean;
   created_at?: string;
   nuntec_reservoir_id?: string; // ID do reservatório de DESTINO para monitorar no Nuntec
+  tipo?: 'FISICO' | 'VIRTUAL'; // Classificação para monitoramento de medições
+}
+
+export interface NuntecMeasurement {
+  id: string;
+  'operator-id': string;
+  'reservoir-id': string;
+  amount: number;
+  'measured-at': string;
+}
+
+export interface NuntecReservoir {
+  id: string;
+  name: string;
+  'fuel-id': string;
+  capacity: number;
+  stock?: number;
+  'station-id': string;
+  nozzleIds?: string[];
+}
+
+export interface NuntecAdmeasurement {
+  id: string;
+  'operator-id': string;
+  'nozzle-id': string;
+  'pulse-factor': number; // Saúde da bomba
+  'updated-at': string;
+}
+
+export interface NuntecStation {
+  id: string;
+  name: string;
+  reservoirs: NuntecReservoir[];
+}
+
+export interface NuntecConsumption {
+  id: string;
+  amount: number;
+  'end-date': string; // Data da baixa
+  'nozzle-id'?: string; // Optional now
+  'reservoir-id': string; // Direct link
+  'tag-number'?: string;
+  'vehicle-plate'?: string;
 }
 
 export type TipoMarcador = 'ODOMETRO' | 'HORIMETRO' | 'SEM_MEDIDOR';
@@ -142,10 +185,23 @@ export interface Abastecimento {
   status: string;
   usuario_id: string;
   nuntec_transfer_id?: string; // ID da transferência Nuntec para evitar duplicidade
+  nuntec_operator_id?: string; // ID do operador na Nuntec (para baixa correta)
+  nuntec_generated_id?: string; // ID gerado pela API Nuntec após baixa (Audit)
+  nuntec_fuel_id?: string; // ID do combustível na Nuntec (NUNCA deve ser nulo se integrado)
+  nuntec_reservoir_id?: string; // Reservatório de origem na Nuntec
+  nuntec_nozzle_number?: string; // Bico utilizado
+
+  // Manager Mode Monitoring
+  is_manager_mode?: boolean;
+  manager_mode_reason?: 'ERRO_LEITURA' | 'SEM_TAG' | 'TERCEIRO' | 'MANUTENCAO' | 'OUTROS';
+  manager_mode_description?: string; // Justificativa manual se OUTROS
+
+
+
   // Campos para display (Joins)
   usuario?: { nome: string };
   fazenda?: { nome: string };
-  posto?: { nome: string };
+  posto?: { nome: string; nuntec_reservoir_id?: string };
 }
 
 // --- Integração Nuntec ---

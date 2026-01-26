@@ -12,6 +12,8 @@ import { StatsCard } from '../components/ui/StatsCard';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { TableSkeleton } from '../components/ui/TableSkeleton';
+import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 
 export function FarmManagement() {
   const { user, hasPermission } = useAuth();
@@ -22,7 +24,9 @@ export function FarmManagement() {
   const [showModal, setShowModal] = useState(false);
   const [editingFarm, setEditingFarm] = useState<Fazenda | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
   const [historyFarmId, setHistoryFarmId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Check permission
   if (!hasPermission('config_fazendas')) {
@@ -60,8 +64,15 @@ export function FarmManagement() {
   }, [farms, searchTerm, filterStatus]);
 
   const loadFarms = async () => {
-    const farmsData = await db.getAllFarms();
-    setFarms(farmsData);
+    setLoading(true);
+    try {
+      const farmsData = await db.getAllFarms();
+      setFarms(farmsData);
+    } catch (error) {
+      console.error('Erro ao carregar fazendas', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateFarm = () => {
@@ -98,6 +109,24 @@ export function FarmManagement() {
   };
 
   const hasActiveFilters = searchTerm || filterStatus !== 'all';
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto pb-20 space-y-6">
+        <PageHeader
+          title="Gestão de Filiais"
+          subtitle="Gerencie as fazendas e filiais da empresa"
+          icon={Building2}
+        >
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl opacity-50 cursor-not-allowed">
+            <Plus size={20} /> Nova Filial
+          </button>
+        </PageHeader>
+        <StatsSkeleton count={3} />
+        <TableSkeleton rows={5} columns={3} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">
@@ -222,11 +251,10 @@ export function FarmManagement() {
                 </button>
                 <button
                   onClick={() => handleToggleStatus(farm.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl transition-all font-medium text-xs ${
-                    farm.ativo
-                      ? 'bg-red-50 border border-red-200 text-red-700 hover:bg-red-100'
-                      : 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl transition-all font-medium text-xs ${farm.ativo
+                    ? 'bg-red-50 border border-red-200 text-red-700 hover:bg-red-100'
+                    : 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
+                    }`}
                 >
                   <Power size={14} /> {farm.ativo ? 'Desativar' : 'Ativar'}
                 </button>

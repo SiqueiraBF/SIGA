@@ -1,5 +1,7 @@
-import { Abastecimento, Posto, NuntecTransfer, NuntecPointing } from '../types';
-import { db } from './supabaseService'; // Import DB wrapper
+import { Abastecimento, Posto, NuntecTransfer, NuntecPointing, NuntecMeasurement, NuntecReservoir, NuntecAdmeasurement, NuntecConsumption } from '../types';
+import { db } from './supabaseService';
+import { supabase } from '../lib/supabase';
+import { format, parseISO, subHours } from 'date-fns';
 
 // Constants configuration
 const DEFAULTS = {
@@ -16,6 +18,315 @@ const operatorCache = new Map<string, string>();
  * Service to handle Nuntec API integration
  */
 export const nuntecService = {
+  /**
+    * Fetches stock measurements from Nuntec API.
+    * Returns the raw list of measurements from the last 72h (or configured window).
+    */
+  async getStockMeasurements(): Promise<NuntecMeasurement[]> {
+    const config = await this.getConfig();
+
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      // Fetch data from the last 72 hours to ensure we cover weekends/holidays
+      // Ensure we use a safe fallback if subHours fails or returns invalid
+      const now = new Date();
+      const sinceDate = subHours(now, 72);
+      const since = format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
+
+      const response = await fetch(
+        `${config.BASE_URL}/stock_pointings.xml?created_at=${since}`,
+        {
+          method: 'GET',
+          headers: headers,
+        },
+      );
+
+      if (!response.ok) {
+        console.warn('Nuntec API (Stock) request failed.');
+        return [];
+      }
+
+      const xmlText = await response.text();
+      if (xmlText.includes('<html') || xmlText.includes('<!DOCTYPE html>')) {
+        throw new Error('API returned HTML (Login Redirect)');
+      }
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const nodes = xmlDoc.getElementsByTagName('stock-pointing');
+
+      const measurements: NuntecMeasurement[] = [];
+
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const m = {
+          id: getTagValue(node, 'id'),
+          'operator-id': getTagValue(node, 'operator-id'),
+          'reservoir-id': getTagValue(node, 'reservoir-id'),
+          amount: parseFloat(getTagValue(node, 'amount') || '0'),
+          'measured-at': getTagValue(node, 'measured-at'),
+        } as NuntecMeasurement;
+
+        if (m.id && m['reservoir-id']) {
+          measurements.push(m);
+        }
+      }
+
+      return measurements;
+    } catch (error) {
+      console.error('Error fetching Nuntec Stock:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Fetches station structure (Capacity/Stock) from Nuntec API.
+   * Useful for progress bars and capacity management.
+   */
+  async getStationsData(): Promise<NuntecReservoir[]> {
+    const config = await this.getConfig();
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      const response = await fetch(`${config.BASE_URL}/stations.xml`, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        console.warn('Nuntec API (Stations) request failed.');
+        return [];
+      }
+
+      const xmlText = await response.text();
+      if (xmlText.includes('<html')) throw new Error('API returned HTML');
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const reservoirNodes = xmlDoc.getElementsByTagName('reservoir');
+
+      const reservoirs: NuntecReservoir[] = [];
+
+      for (let i = 0; i < reservoirNodes.length; i++) {
+        const node = reservoirNodes[i];
+        const id = getTagValue(node, 'id');
+        const stationId = getTagValue(node, 'station-id');
+
+        if (id && stationId) {
+          // Parse nozzles to get their IDs
+          const nozzleNodes = node.getElementsByTagName('nozzle');
+          const nozzleIds: string[] = [];
+          for (let j = 0; j < nozzleNodes.length; j++) {
+            const nId = getTagValue(nozzleNodes[j], 'id');
+            if (nId) nozzleIds.push(nId);
+          }
+
+          reservoirs.push({
+            id: id,
+            name: getTagValue(node, 'name') || `Tanque ${id}`,
+            'fuel-id': getTagValue(node, 'fuel-id') || '0',
+            capacity: parseFloat(getTagValue(node, 'capacity') || '0'),
+            stock: parseFloat(getTagValue(node, 'stock') || '0'),
+            'station-id': stationId,
+            nozzleIds: nozzleIds
+          });
+        }
+      }
+
+      return reservoirs;
+    } catch (error) {
+      console.error('Error fetching Nuntec Stations:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Fetches admeasurements (pump calibrations) from Nuntec API.
+   * Used to track pump health and calibration status.
+   */
+  async getAdmeasurements(): Promise<NuntecAdmeasurement[]> {
+    const config = await this.getConfig();
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      const response = await fetch(`${config.BASE_URL}/admeasurements.xml`, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        console.warn('Nuntec API (Admeasurements) request failed.');
+        return [];
+      }
+
+      const xmlText = await response.text();
+      if (xmlText.includes('<html')) throw new Error('API returned HTML');
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const nodes = xmlDoc.getElementsByTagName('admeasurement');
+
+      const records: NuntecAdmeasurement[] = [];
+
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const id = getTagValue(node, 'id');
+        const nozzleId = getTagValue(node, 'nozzle-id');
+
+        if (id && nozzleId) {
+          records.push({
+            id: id,
+            'operator-id': getTagValue(node, 'operator-id') || '0',
+            'nozzle-id': nozzleId,
+            'pulse-factor': parseFloat(getTagValue(node, 'pulse-factor') || '0'),
+            'updated-at': getTagValue(node, 'updated-at') || '',
+          });
+        }
+      }
+
+      // Sort by date desc (newest first)
+      return records.sort((a, b) =>
+        new Date(b['updated-at']).getTime() - new Date(a['updated-at']).getTime()
+      );
+
+    } catch (error) {
+      console.error('Error fetching Nuntec Admeasurements:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Fetches transfers (consumption) from Nuntec API for the last X days.
+   * Used for functionality like "Autonomy Calculation".
+   */
+  /**
+   * Fetches consumptions (fuelings) from Nuntec API for the last X days.
+   * Uses /fuelings.xml endpoint.
+   */
+  async getConsumptions(days = 7): Promise<NuntecConsumption[]> {
+    const config = await this.getConfig();
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      const now = new Date();
+      const sinceDate = subHours(now, days * 24);
+      const since = format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
+
+      // 1. Fetch Fuelings (Abastecimentos)
+      const fetchFuelings = fetch(`${config.BASE_URL}/fuelings.xml?updated_at=${since}`, {
+        method: 'GET', headers: headers
+      });
+
+      // 2. Fetch Transfers (Transferências/Aferições/Drenas)
+      const fetchTransfers = fetch(`${config.BASE_URL}/transfers.xml?updated_at=${since}`, {
+        method: 'GET', headers: headers
+      });
+
+      const [resFuelings, resTransfers] = await Promise.all([fetchFuelings, fetchTransfers]);
+      const consumptions: NuntecConsumption[] = [];
+
+      // --- Process Fuelings ---
+      if (resFuelings.ok) {
+        const xmlText = await resFuelings.text();
+        if (!xmlText.includes('<html')) {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+          const nodes = xmlDoc.getElementsByTagName('fueling');
+
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const pointingNode = node.getElementsByTagName('pointing')[0];
+            if (!pointingNode) continue;
+
+            const rawAmount = parseFloat(getTagValue(pointingNode, 'amount') || '0');
+            const amount = Math.abs(rawAmount);
+
+            const endDate = getTagValue(node, 'end-at') || getTagValue(pointingNode, 'datetime');
+
+            // Date Filter
+            if (endDate && parseISO(endDate) < sinceDate) continue;
+
+            const t: NuntecConsumption = {
+              id: getTagValue(node, 'id') || '',
+              amount: amount,
+              'end-date': endDate || '',
+              'reservoir-id': getTagValue(pointingNode, 'reservoir-id') || '',
+              'nozzle-id': getTagValue(pointingNode, 'nozzle-number') || undefined,
+            };
+
+            if (t.id && t['reservoir-id']) consumptions.push(t);
+          }
+        }
+      }
+
+      // --- Process Transfers ---
+      if (resTransfers.ok) {
+        const xmlText = await resTransfers.text();
+        if (!xmlText.includes('<html')) {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+          const nodes = xmlDoc.getElementsByTagName('transfer');
+
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const pointingOutTags = node.getElementsByTagName('pointing-out');
+            let pointingOut = null;
+            for (let j = 0; j < pointingOutTags.length; j++) {
+              if (pointingOutTags[j].children.length > 0) {
+                pointingOut = pointingOutTags[j];
+                break;
+              }
+            }
+            if (!pointingOut) continue;
+
+            const rawAmountStr = getTagValue(pointingOut, 'amount') || getTagValue(node, 'amount');
+            const amount = Math.abs(parseFloat(rawAmountStr || '0'));
+
+            const endDate = getTagValue(node, 'end-at') || getTagValue(node, 'end-date');
+
+            // Date Filter
+            if (endDate && parseISO(endDate) < sinceDate) continue;
+
+            // Identification
+            const reservoirId = getTagValue(pointingOut, 'reservoir-id') || getTagValue(node, 'origin-reservoir-id');
+            const nozzleId = getTagValue(pointingOut, 'nozzle-number') || getTagValue(node, 'nozzle-id');
+
+            const t: NuntecConsumption = {
+              id: getTagValue(node, 'id') || '',
+              amount: amount,
+              'end-date': endDate || '',
+              'reservoir-id': reservoirId || '',
+              'nozzle-id': nozzleId || undefined,
+            };
+
+            if (t.id && (t['reservoir-id'] || t['nozzle-id'])) {
+              consumptions.push(t);
+            }
+          }
+        }
+      }
+
+      return consumptions;
+
+    } catch (error) {
+      console.error('Error fetching Nuntec Consumptions:', error);
+      return [];
+    }
+  },
+
   /**
    * Helper to get active config or defaults
    */
@@ -197,9 +508,8 @@ export const nuntecService = {
     const headers = new Headers();
     headers.set('Authorization', 'Basic ' + btoa(`${testConfig.username}:${testConfig.password}`));
 
-    const url = `${testConfig.base_url || DEFAULTS.BASE_URL}/transfers.xml?updated_after=${
-      testConfig.sync_start_date || DEFAULTS.START_DATE_SYNC
-    }&_t=${Date.now()}`;
+    const url = `${testConfig.base_url || DEFAULTS.BASE_URL}/transfers.xml?updated_after=${testConfig.sync_start_date || DEFAULTS.START_DATE_SYNC
+      }&_t=${Date.now()}`;
 
     const response = await fetch(url, { method: 'GET', headers: headers });
 
@@ -229,7 +539,276 @@ export const nuntecService = {
       throw new Error(`Erro API: ${response.status} ${response.statusText}`);
     }
   },
+  /**
+   * Retrieves a specific transfer by ID to get technical details (operator-id, fuel-id, etc.)
+   */
+  async getTransferById(transferId: string): Promise<NuntecTransfer | null> {
+    const config = await this.getConfig();
+    if (!config) return null;
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      // Fetch transfers from the sync start date to ensure we cover the transfer range
+      const response = await fetch(
+        `${config.BASE_URL}/transfers.xml?updated_after=${config.START_DATE_SYNC}`,
+        {
+          method: 'GET',
+          headers: headers,
+        },
+      );
+
+      if (!response.ok) return null;
+
+      const xmlText = await response.text();
+      if (xmlText.includes('<html')) return null;
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const transferNodes = xmlDoc.getElementsByTagName('transfer');
+
+      for (let i = 0; i < transferNodes.length; i++) {
+        const node = transferNodes[i];
+        // Parse basic details first to check ID
+        const idNode = Array.from(node.children).find(c => c.tagName === 'id');
+        if (idNode?.textContent === transferId) {
+          return parseTransferNode(node);
+        }
+      }
+
+      return null;
+    } catch (e) {
+      console.error("Error fetching transfer by ID", e);
+      return null;
+    }
+  },
+
+  /**
+   * Tries to repair missing technical IDs (fuel-id, etc) by re-fetching the original transfer
+   */
+  async repairFuelingData(fuelingId: string, nuntecTransferId: string): Promise<boolean> {
+    try {
+      console.log(`Reparando dados para abastecimento ${fuelingId} com Transferencia Nuntec ${nuntecTransferId}`);
+
+      const transfer = await this.getTransferById(nuntecTransferId);
+      if (!transfer) {
+        throw new Error(`Transferência Nuntec ${nuntecTransferId} não encontrada na API.`);
+      }
+
+      const updates: any = {};
+
+      // Check for data that is possibly missing locally but present in Nuntec
+      if (transfer['pointing-in']?.['fuel-id']) updates.nuntec_fuel_id = transfer['pointing-in']['fuel-id'];
+      if (transfer['pointing-in']?.['reservoir-id']) updates.nuntec_reservoir_id = transfer['pointing-in']['reservoir-id'];
+      if (transfer['pointing-in']?.['nozzle-number']) updates.nuntec_nozzle_number = transfer['pointing-in']['nozzle-number'];
+      if (transfer['operator-id']) updates.nuntec_operator_id = transfer['operator-id'];
+
+      if (Object.keys(updates).length === 0) {
+        console.warn("Nenhum dado novo encontrado na Nuntec para atualizar.");
+        return false;
+      }
+
+      const { error } = await supabase
+        .from('abastecimentos')
+        .update(updates)
+        .eq('id', fuelingId);
+
+      if (error) throw error;
+
+      return true;
+    } catch (error) {
+      console.error("Erro ao reparar dados Nuntec:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Scans for all fueling records with Nuntec Transfer ID but missing Fuel ID,
+   * and attempts to repair them sequentially.
+   */
+  async repairAllMissingData(): Promise<{ total: number; fixed: number; errors: number }> {
+    try {
+      // 1. Find candidates
+      const { data: candidates, error } = await supabase
+        .from('abastecimentos')
+        .select('id, nuntec_transfer_id')
+        .not('nuntec_transfer_id', 'is', null)
+        .is('nuntec_fuel_id', null);
+
+      if (error) throw error;
+      if (!candidates || candidates.length === 0) return { total: 0, fixed: 0, errors: 0 };
+
+      console.log(`Encontrados ${candidates.length} registros para reparo.`);
+
+      let fixedCount = 0;
+      let errorCount = 0;
+
+      // 2. Process sequentially to avoid rate limits
+      for (const item of candidates) {
+        if (!item.nuntec_transfer_id) continue;
+        try {
+          const success = await this.repairFuelingData(item.id, item.nuntec_transfer_id);
+          if (success) fixedCount++;
+        } catch (e) {
+          console.error(`Falha ao reparar item ${item.id}`, e);
+          errorCount++;
+        }
+      }
+
+      return { total: candidates.length, fixed: fixedCount, errors: errorCount };
+    } catch (err) {
+      console.error("Erro no reparo em massa:", err);
+      throw err;
+    }
+  },
+
+  /**
+   * Sends the fueling command to Nuntec API
+   * Returns the Nuntec ID of the created record.
+   */
+  async createFueling(data: Abastecimento, originalTransfer?: NuntecTransfer): Promise<string> {
+    const config = await this.getConfig();
+    if (!config) throw new Error('Integração Nuntec não configurada.');
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    headers.set('Content-Type', 'application/xml');
+
+    // 1. Prepare Data
+    // Extract Numeric IDs from Strings
+    const operationId = data.operacao.match(/^(\d+)/)?.[1] || '1'; // Default to 1 if not found
+    const cultureId = data.cultura.match(/^(\d+)/)?.[1] || '1';
+
+    // Auto-Lookup Original Transfer if missing
+    let sourceTransfer = originalTransfer;
+    if (!sourceTransfer && data.nuntec_transfer_id) {
+      sourceTransfer = (await this.getTransferById(data.nuntec_transfer_id)) || undefined;
+    }
+
+    // Technical IDs from Original Transfer or Persisted Data
+    // We prioritize locally saved ID (most robust), then originalTransfer, then default
+    let operatorId = data.nuntec_operator_id || sourceTransfer?.['operator-id'] || '24';
+    let fuelId = data.nuntec_fuel_id || sourceTransfer?.['pointing-in']['fuel-id'] || '1';
+    let reservoirId = data.nuntec_reservoir_id || sourceTransfer?.['pointing-in']['reservoir-id'];
+    let nozzleNumber = data.nuntec_nozzle_number || sourceTransfer?.['pointing-in']['nozzle-number'] || '1';
+
+    // If reservoirId is missing (Manual Release), fetch from Posto configuration
+    if (!reservoirId && data.posto_id) {
+      try {
+        const { data: postoData } = await supabase
+          .from('postos')
+          .select('nuntec_reservoir_id')
+          .eq('id', data.posto_id)
+          .single();
+
+        if (postoData && postoData.nuntec_reservoir_id) {
+          reservoirId = String(postoData.nuntec_reservoir_id);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch Nuntec Reservoir ID from Posto', e);
+      }
+    }
+
+    // Final fallback
+    if (!reservoirId) reservoirId = '1';
+
+    // Amount must be negative for output (fueled)
+    const amount = -Math.abs(data.volume);
+
+    // Vehicle ID: Must be numeric for Nuntec.
+    // 1. Try existing numeric ID (if user manually entered a number or system has numeric id)
+    let vehicleId = /^\d+$/.test(data.veiculo_id || '') ? data.veiculo_id : null;
+
+    // 2. If not found, try to extract from Name (e.g. "418 - Trator" -> 418)
+    if (!vehicleId && data.veiculo_nome) {
+      // Try to match "ID: 123" or just "123 - ..."
+      const match = data.veiculo_nome.match(/^(\d+)/);
+      if (match) {
+        vehicleId = match[1];
+        console.log(`[Nuntec] Extracted Vehicle ID from Name: ${vehicleId}`);
+      }
+    }
+
+    // 3. Fallback to '0' (Unknown) if everything fails
+    if (!vehicleId) {
+      console.warn(`[Nuntec] No numeric Vehicle ID found (Orig: ${data.veiculo_id}, Name: ${data.veiculo_nome}). Fallback to 0.`);
+      vehicleId = '0';
+    }
+
+    // Operator ID: Must be numeric.
+    // If not numeric, fall back to default '24'.
+    if (!/^\d+$/.test(operatorId)) {
+      console.warn(`[Nuntec] Sanitizing non-numeric Operator ID: ${operatorId} -> 24`);
+      operatorId = '24';
+    }
+
+    // 2. Build XML for Fueling
+    const xml = `
+      <fueling>
+        <vehicle-id>${vehicleId}</vehicle-id>
+        <operator-id>${operatorId}</operator-id>
+        <start-at>${format(parseISO(data.data_abastecimento), 'yyyy-MM-dd HH:mm:ss')}</start-at>
+        <end-at>${format(parseISO(data.data_abastecimento), 'yyyy-MM-dd HH:mm:ss')}</end-at>
+        <operation-id>${operationId}</operation-id>
+        <culture-id>${cultureId}</culture-id>
+        <pointing-attributes>
+          <nozzle-number>${nozzleNumber}</nozzle-number>
+          <fuel-id>${fuelId}</fuel-id>
+          <amount>${amount}</amount>
+          <reservoir-id>${reservoirId}</reservoir-id>
+          <datetime>${format(parseISO(data.data_abastecimento), 'yyyy-MM-dd HH:mm:ss')}</datetime>
+        </pointing-attributes>
+      </fueling>
+    `.trim();
+
+    // 3. Send POST Fueling
+    console.log('[Nuntec API] Sending Fueling XML:', xml);
+    const response = await fetch(`${config.BASE_URL}/fuelings.xml`, {
+      method: 'POST',
+      headers,
+      body: xml
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Nuntec API Error]', errorText);
+      throw new Error(`Erro Nuntec (${response.status}): ${errorText}`);
+    }
+
+    // Parse response to find ID
+    const responseText = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(responseText, 'text/xml');
+    const createdId = doc.querySelector('fueling > id')?.textContent;
+
+    // 4. Send Odometery/Hourmeter (Parallel)
+    if (data.tipo_marcador !== 'SEM_MEDIDOR' && data.leitura_marcador) {
+      const type = data.tipo_marcador === 'ODOMETRO' ? 'odometers' : 'hourmeters';
+      const tag = data.tipo_marcador === 'ODOMETRO' ? 'odometer' : 'hourmeter';
+
+      const metricXml = `
+            <${tag}>
+                <vehicle-id>${vehicleId}</vehicle-id>
+                <datetime>${format(parseISO(data.data_abastecimento), 'yyyy-MM-dd HH:mm:ss')}</datetime>
+                <value>${data.leitura_marcador}.0</value>
+                <entered-manually>true</entered-manually>
+            </${tag}>
+        `.trim();
+
+      console.log(`[Nuntec API] Sending ${tag} XML:`, metricXml);
+      await fetch(`${config.BASE_URL}/${type}.xml`, {
+        method: 'POST',
+        headers,
+        body: metricXml
+      }).catch(e => console.warn(`Failed to send ${tag}`, e));
+    }
+
+    // Return the ID for confirmation
+    return createdId || 'Criado (ID não retornado)';
+  },
 };
+
 
 // --- Helpers ---
 
@@ -308,10 +887,10 @@ function parseTransferNode(node: Element): NuntecTransfer | null {
 
     const pointingOut = pointingOutNode
       ? {
-          id: extract(pointingOutNode, 'id') || '',
-          amount: parseFloat(extract(pointingOutNode, 'amount') || '0'),
-          'reservoir-id': extract(pointingOutNode, 'reservoir-id'),
-        }
+        id: extract(pointingOutNode, 'id') || '',
+        amount: parseFloat(extract(pointingOutNode, 'amount') || '0'),
+        'reservoir-id': extract(pointingOutNode, 'reservoir-id'),
+      }
       : undefined;
 
     return {
@@ -326,4 +905,11 @@ function parseTransferNode(node: Element): NuntecTransfer | null {
     console.warn('Error parsing transfer node', e);
     return null;
   }
+}
+
+function getTagValue(parent: Element, tag: string): string | null {
+  for (let i = 0; i < parent.children.length; i++) {
+    if (parent.children[i].tagName === tag) return parent.children[i].textContent;
+  }
+  return null;
 }

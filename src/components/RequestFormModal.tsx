@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Calendar, User, Building2, AlertTriangle, FileText, CheckCircle2, RotateCcw, Box, Plus, Pencil, Trash2, ArrowUpDown, Clock, Search, Send, Save, Ban, CheckCircle, Edit3, MousePointerClick } from 'lucide-react';
+import { X, Calendar, User, Building2, AlertTriangle, FileText, CheckCircle2, RotateCcw, Box, Plus, Pencil, Trash2, ArrowUpDown, Clock, Search, Send, Save, Ban, CheckCircle, Edit3, MousePointerClick, Package, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/supabaseService';
+import { notificationService } from '../services/notificationService';
 import type { Solicitacao, Fazenda, Usuario } from '../types';
 import { format } from 'date-fns';
+import { formatInSystemTime } from '../utils/dateUtils';
 import { RequestItemsTable } from './RequestFormModalComponents/RequestItemsTable';
+import { AuditLogModal } from './AuditLogModal';
 
 interface RequestFormModalProps {
   isOpen: boolean;
@@ -24,13 +27,18 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
   const { user, checkAccess } = useAuth();
   const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
   const currentRequestId = requestId || createdRequestId;
+  const [fullRequest, setFullRequest] = useState<any>(null); // Store full request for notification usage
 
   // Base State
   const [loading, setLoading] = useState(false);
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
 
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+
   // Form State - Context
   const [contextData, setContextData] = useState({
+    numero: null as number | null, // Added for UI display
     solicitante: user?.nome || '',
     fazenda_id: user?.fazenda_id || '',
     prioridade: 'Normal' as 'Normal' | 'Urgente',
@@ -49,12 +57,16 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
   const isSubmittingRef = useRef(false); // Ref to prevent race conditions
 
   // Computed
-  const isNew = !requestId;
-  const isOwner = user?.id === (initialData?.request?.usuario_id || user?.id);
+  const isNew = !currentRequestId;
+  // Permissions State
+  const [requestOwnerId, setRequestOwnerId] = useState<string | null>(initialData?.request?.usuario_id || null);
+
+  // Computed
+  const isOwner = isNew ? true : (user?.id === requestOwnerId);
   const isCorrectionMode = contextData.status === 'Devolvido';
 
   // Permissions
-  const canEditContext = isNew || (contextData.status === 'Aberto' && isOwner) || isCorrectionMode;
+  const canEditContext = isNew || (contextData.status === 'Aberto' && isOwner);
   const canEditItems = isNew || (contextData.status === 'Aberto' && isOwner) || isCorrectionMode;
 
   const canAnalyze = checkAccess({ module: 'abrir_solicitacao', action: 'confirm' });
@@ -71,10 +83,17 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
   });
 
   const canDelete = !isNew && ((isOwner && contextData.status === 'Aberto') || hasFullManagement);
-  const canReopen = (contextData.status !== 'Aberto') && (
-    hasFullManagement ||
-    (isRegistrar && (contextData.status === 'Aguardando' || contextData.status === 'Em Cadastro'))
-  );
+  const canReopen =
+    (hasFullManagement && contextData.status !== 'Aberto') ||
+    (isOwner && contextData.status === 'Aguardando' && checkAccess({
+      module: 'abrir_solicitacao',
+      action: 'edit', // Indirectly checking if they have basic edit rights, but specific role logic handles the nuances. 
+      // Actually, per requirement: "se for = solicitante rascunho (OWN_PENDING), só pode aparecer para quem criou o formulario e o status deve ser aguardando."
+      // We already check isOwner and status. We just need to ensure they have the *capability* to be an author/editor.
+      // But simpler: just check permission scope.
+      resourceOwnerId: user?.id,
+      resourceStatus: 'PENDENTE' // This dummy check confirms they have at least OWN_PENDING edit rights
+    }));
 
   // Load Data
   useEffect(() => {
@@ -93,7 +112,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
   }, [isOpen, requestId, initialData]);
 
   const resetForm = () => {
+    setCreatedRequestId(null); // Clear any previously created ID
     setContextData({
+      numero: null,
       solicitante: user?.nome || '',
       fazenda_id: user?.fazenda_id || '',
       prioridade: 'Normal',
@@ -104,11 +125,16 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
     setItems([]);
     setEditingItem(null);
     setAnalystSelectedItem(null);
+    setFullRequest(null);
   };
 
   const loadDependencies = async () => {
-    const farms = await db.getAllFarms();
+    const [farms, users] = await Promise.all([
+      db.getAllFarms(),
+      db.getAllUsers()
+    ]);
     setFazendas(farms.filter(f => f.ativo));
+    setUsuarios(users.filter(u => u.ativo));
   };
 
   const loadRequestData = async (id: string) => {
@@ -128,7 +154,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
   };
 
   const populateForm = (req: Solicitacao, reqItems: any[]) => {
+    setFullRequest(req); // Save full object
     setContextData({
+      numero: req.numero,
       solicitante: (req as any).usuario?.nome || 'Usuário',
       fazenda_id: req.fazenda_id,
       prioridade: req.prioridade as 'Normal' | 'Urgente',
@@ -136,6 +164,7 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
       data_abertura: req.data_abertura,
       status: req.status
     });
+    setRequestOwnerId(req.usuario_id); // Set correct owner
     setItems(reqItems.map(i => ({
       ...i,
       status: i.status_item || i.status
@@ -144,15 +173,19 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
 
   // --- Actions ---
 
-  const handleGlobalAction = async (action: 'SAVE' | 'SEND' | 'START_CADASTRO' | 'FINISH_CADASTRO' | 'REOPEN' | 'RETURN' | 'DELETE') => {
+  const handleGlobalAction = async (action: 'SAVE' | 'SEND' | 'START_CADASTRO' | 'FINISH_CADASTRO' | 'REOPEN' | 'RETURN' | 'DELETE' | 'RESEND') => {
     if (loading || isSubmittingRef.current) return;
 
     setLoading(true);
     isSubmittingRef.current = true;
     try {
       let reqId = currentRequestId;
+
+      // FIX: Never overwrite requester on update. Use existing owner ID or current user ONLY if creating new.
+      const ownerToSave = isNew ? user!.id : (requestOwnerId || user!.id);
+
       const payload: any = {
-        usuario_id: initialData?.request?.usuario_id || user?.id,
+        usuario_id: ownerToSave,
         fazenda_id: contextData.fazenda_id,
         prioridade: contextData.prioridade,
         observacao_geral: contextData.observacao,
@@ -163,6 +196,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         if (action === 'SAVE' || action === 'SEND') {
           const newReq = await db.createRequest({ ...payload, status: 'Aberto' }, [], user!.id);
           reqId = newReq.id;
+          setCreatedRequestId(newReq.id); // Validating New ID
+          setContextData(prev => ({ ...prev, numero: newReq.numero })); // Update number for UI
+          setRequestOwnerId(newReq.usuario_id); // Ensure state is synced
         }
       } else {
         await db.updateRequest(reqId, payload, user!.id);
@@ -175,7 +211,8 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         if (items.length === 0) { alert("Adicione itens antes de enviar."); setLoading(false); return; }
         await db.updateRequest(reqId, { status: 'Aguardando' }, user!.id);
         alert('Solicitação enviada com sucesso!');
-        onSave(); onClose();
+        setContextData(prev => ({ ...prev, status: 'Aguardando' }));
+        onSave();
       }
       else if (action === 'START_CADASTRO') {
         await db.updateRequest(reqId, { status: 'Em Cadastro' }, user!.id);
@@ -187,17 +224,32 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         if (hasPending) { alert('Existem itens pendentes de análise.'); setLoading(false); return; }
         await db.updateRequest(reqId, { status: 'Finalizado' }, user!.id);
         alert('Finalizado com sucesso!');
-        onSave(); onClose();
+        setContextData(prev => ({ ...prev, status: 'Finalizado' }));
+        onSave();
       }
       else if (action === 'RETURN') {
         await db.updateRequest(reqId, { status: 'Devolvido' }, user!.id);
         alert('Solicitação devolvida ao solicitante.');
-        onSave(); onClose();
+        setContextData(prev => ({ ...prev, status: 'Devolvido' }));
+        onSave();
+      }
+      else if (action === 'RESEND') {
+        const hasRejections = items.some(i => i.status === 'Reprovado' || i.status === 'Devolvido');
+        if (hasRejections) {
+          alert('Você ainda possui itens reprovados. Corrija-os ou exclua-os antes de reenviar.');
+          setLoading(false);
+          return;
+        }
+        await db.updateRequest(reqId, { status: 'Aguardando' }, user!.id);
+        alert('Correção enviada para análise!');
+        setContextData(prev => ({ ...prev, status: 'Aguardando' }));
+        onSave();
       }
       else if (action === 'REOPEN') {
         await db.updateRequest(reqId, { status: 'Aberto' }, user!.id); // Back to Draft effectively
         alert('Solicitação reaberta para edição (Rascunho).');
-        onSave(); onClose();
+        setContextData(prev => ({ ...prev, status: 'Aberto' }));
+        onSave();
       }
       else if (action === 'DELETE') {
         if (confirm("Excluir solicitação permanentemente?")) {
@@ -253,7 +305,7 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
       if (!reqId) {
         // Create draft header first
         const newReq = await db.createRequest({
-          usuario_id: user!.id,
+          usuario_id: user!.id, // Creating new, so user is owner
           fazenda_id: contextData.fazenda_id,
           prioridade: contextData.prioridade,
           observacao_geral: contextData.observacao,
@@ -261,14 +313,24 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         }, [], user!.id);
         reqId = newReq.id;
         setCreatedRequestId(newReq.id);
+        setRequestOwnerId(user!.id); // Set owner!
+        setContextData(prev => ({ ...prev, numero: newReq.numero })); // Update number for UI
+      } else {
+        // If just adding items to existing, ensure we don't accidentally update header with WRONG owner if we were to act on header. 
+        // But db.addItemToRequest strictly adds item. 
+        // HOWEVER, does it update header? No usually.
+        // BUT if we are paranoid, we should ensure contextData owner is preserved if we ever update header here.
+        // We are NOT updating header here explicitly, just adding item.
       }
+
+
 
       const payload = {
         descricao: desc,
         marca: data.get('marca') as string,
         referencia: data.get('referencia') as string,
         unidade: data.get('unidade') as string,
-        status_item: 'Pendente'
+        status_item: 'Pendente' as const
       };
 
       if (editingItem) {
@@ -309,11 +371,17 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
     try {
       let updateData: any = {};
       if (acao === 'devolver') {
-        updateData = { status_item: 'Reprovado', motivo_reprovacao: 'Informações pendentes' }; // Simplified logic
+        // Use the input value (codUni) as the rejection reason AND the code (so it shows in table)
+        if (!codUni) throw new Error("Informe o motivo no campo Cód. Uni para devolver.");
+        updateData = {
+          status_item: 'Reprovado',
+          motivo_reprovacao: codUni,
+          cod_reduzido_unisystem: codUni
+        };
       } else {
-        // OK implies Approved or similar
+        // OK implies Approved
         if (!codUni) throw new Error("Código UNI obrigatório para aprovar");
-        updateData = { status_item: 'Aprovado', cod_reduzido_unisystem: codUni };
+        updateData = { status_item: 'Aprovado', cod_reduzido_unisystem: codUni, motivo_reprovacao: null }; // Clear any previous rejection reason
       }
 
       await db.updateItem(analystSelectedItem.id, updateData, user!.id);
@@ -356,6 +424,33 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
     }
   };
 
+  const handleNotifyWhatsapp = () => {
+    if (!fullRequest) return;
+
+    // Prepare data for generator
+    // Ensure we have phone. If not in fullRequest.usuario, we can't send.
+    const userPhone = fullRequest.usuario?.telefone;
+
+    if (!userPhone) {
+      alert("Usuário solicitante não possui telefone cadastrado.");
+      return;
+    }
+
+    const requestForMsg = {
+      numero: contextData.numero,
+      solicitante_nome: contextData.solicitante,
+      filial_nome: fazendas.find(f => f.id === contextData.fazenda_id)?.nome,
+      prioridade: contextData.prioridade,
+      observacao: contextData.observacao,
+      status: contextData.status // Essential for detecting isDevolucao
+    };
+
+    const link = notificationService.generateWhatsappLink(requestForMsg, items, userPhone);
+    if (link) {
+      window.open(link, '_blank');
+    }
+  };
+
   // Render Helpers
   const StatusBadge = ({ status }: { status: string }) => {
     const config = {
@@ -382,21 +477,46 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         {/* Header */}
         <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
-              <Box size={24} />
+            <div className={`p-3.5 rounded-2xl flex items-center justify-center transition-colors ${contextData.status === 'Finalizado' ? 'bg-green-50 text-green-600' :
+              contextData.status === 'Aguardando' ? 'bg-amber-50 text-amber-600' :
+                contextData.status === 'Em Cadastro' ? 'bg-purple-50 text-purple-600' :
+                  contextData.status === 'Devolvido' ? 'bg-orange-50 text-orange-600' :
+                    'bg-slate-100 text-slate-600' // Aberto/Rascunho
+              }`}>
+              <Package size={32} strokeWidth={1.5} />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                {isNew ? 'Nova Solicitação' : `Solicitação #${requestId?.split('-')[0] || '...'}`}
+              <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">
+                {isNew && !contextData.numero ? 'Nova Solicitação' : `Solicitação #${contextData.numero || requestId?.split('-')[0] || '...'}`}
               </h2>
-              <div className="flex items-center gap-3 mt-1">
-                <StatusBadge status={contextData.status} />
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">STATUS:</span>
+                <span className={`text-[11px] font-bold uppercase tracking-wide ${contextData.status === 'Finalizado' ? 'text-green-600' :
+                  contextData.status === 'Aguardando' ? 'text-amber-600' :
+                    contextData.status === 'Em Cadastro' ? 'text-purple-600' :
+                      contextData.status === 'Devolvido' ? 'text-orange-600' :
+                        'text-slate-500' // Rascunho
+                  }`}>
+                  {contextData.status === 'Aberto' ? 'RASCUNHO' : contextData.status.toUpperCase()}
+                </span>
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            {!isNew && (
+              <button
+                onClick={() => setIsAuditOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-700 rounded-lg transition-colors uppercase tracking-wide"
+                title="Ver Histórico de Alterações"
+              >
+                <Clock size={16} />
+                <span className="hidden sm:inline">Histórico</span>
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -414,7 +534,7 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Data Abertura</label>
                   <input
                     type="text"
-                    value={format(new Date(contextData.data_abertura), 'dd/MM/yyyy HH:mm')}
+                    value={formatInSystemTime(contextData.data_abertura)}
                     disabled
                     className="w-full px-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-600 text-sm font-medium"
                   />
@@ -482,48 +602,72 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
           {/* Right Column: Content */}
           <div className="flex-1 flex flex-col bg-slate-50/50 relative">
 
-            {/* Top Section: Action Forms */}
-
             {/* 1. CREATOR MODE: New/Edit Item */}
-            {!isAnalystMode && canEditItems && (
-              <div className="p-6 bg-white border-b border-slate-200/60 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-20">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-4">
-                  <Plus size={12} /> {editingItem ? 'Editar Item' : 'Novo Item'}
+            {/* Rule: In 'Devolvido', only allow form if Editing. Do not show 'New Item'. */}
+            {!isAnalystMode && canEditItems && (contextData.status !== 'Devolvido' || editingItem) && (
+              <div className="p-6 bg-slate-50/80 border-b border-slate-200/60 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-20">
+                <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">
+                  <Plus size={14} className="text-slate-400" /> {editingItem ? 'EDITAR ITEM' : 'NOVO ITEM'}
                 </div>
-                <form ref={itemFormRef} onSubmit={handleCreatorItemSubmit}>
-                  <div className="flex gap-4 mb-3">
+                <form ref={itemFormRef} onSubmit={handleCreatorItemSubmit} className="space-y-4">
+
+                  {/* Row 1 */}
+                  <div className="flex gap-4">
                     <div className="flex-[3]">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descrição</label>
-                      <input name="descricao" type="text" className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Nome do produto" required />
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descrição</label>
+                      <input
+                        name="descricao"
+                        type="text"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                        placeholder="Nome do produto"
+                        required
+                      />
                     </div>
                     <div className="flex-[2]">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Marca</label>
-                      <input name="marca" type="text" className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:border-blue-500 outline-none" placeholder="-" />
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Marca</label>
+                      <input
+                        name="marca"
+                        type="text"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                        placeholder="-"
+                      />
                     </div>
-                    <div className="flex-[1]">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Unidade</label>
-                      <select name="unidade" className="w-full px-3 py-2 border border-slate-200 rounded text-sm bg-white outline-none">
-                        <option value="UN">UN</option>
-                        <option value="KG">KG</option>
-                        <option value="LT">LT</option>
-                        <option value="CX">CX</option>
-                      </select>
+                    <div className="w-32">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unidade</label>
+                      <div className="relative">
+                        <select name="unidade" className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none appearance-none cursor-pointer">
+                          <option value="UN">UN</option>
+                          <option value="KG">KG</option>
+                          <option value="LT">LT</option>
+                          <option value="CX">CX</option>
+                          <option value="M">M</option>
+                          <option value="PC">PC</option>
+                        </select>
+                        <ArrowUpDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
                     </div>
                   </div>
+
+                  {/* Row 2 */}
                   <div className="flex gap-4 items-end">
                     <div className="flex-[2]">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Referência</label>
-                      <input name="referencia" type="text" className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:border-blue-500 outline-none" placeholder="-" />
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Referência</label>
+                      <input
+                        name="referencia"
+                        type="text"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                        placeholder="-"
+                      />
                     </div>
                     <div className="flex-[4]">
                       {editingItem ? (
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => { setEditingItem(null); itemFormRef.current?.reset(); }} disabled={loading} className="flex-1 py-2 bg-slate-100 text-slate-600 font-bold rounded text-xs uppercase hover:bg-slate-200 disabled:opacity-50">Cancelar</button>
-                          <button type="submit" disabled={loading} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded text-xs uppercase hover:bg-blue-700 disabled:opacity-50">{loading ? 'Salvando...' : 'Atualizar'}</button>
+                        <div className="flex gap-2 h-[38px]">
+                          <button type="button" onClick={() => { setEditingItem(null); itemFormRef.current?.reset(); }} disabled={loading} className="flex-1 bg-slate-200 text-slate-600 font-bold rounded-lg text-xs uppercase hover:bg-slate-300 disabled:opacity-50 transition-colors">Cancelar</button>
+                          <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold rounded-lg text-xs uppercase hover:bg-blue-700 disabled:opacity-50 shadow-md shadow-blue-200 transition-all">Atualizar Item</button>
                         </div>
                       ) : (
-                        <button type="submit" disabled={loading} className="w-full py-2 bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 font-bold rounded text-xs uppercase tracking-wide transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                          {loading ? '+ Adicionando...' : '+ Adicionar Item na Lista'}
+                        <button type="submit" disabled={loading} className="w-full h-[38px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300 font-extrabold rounded-lg text-xs uppercase tracking-wide transition-all shadow-sm active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed">
+                          Adicionar Item na Lista
                         </button>
                       )}
                     </div>
@@ -537,54 +681,93 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
               <div className="p-6 bg-white border-b border-slate-200/60 shadow-sm z-20 min-h-[140px] flex flex-col justify-center">
                 {analystSelectedItem ? (
                   <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-4">
-                      <CheckCircle size={12} /> Editar/Analisar Item
+                    <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">
+                      <Clock size={14} className="text-purple-500" /> EDITAR/ANALISAR ITEM
                     </div>
-                    <form ref={analystFormRef} onSubmit={handleAnalystItemSubmit} className="p-4 rounded-xl border border-purple-100 bg-purple-50/30">
-                      {/* Read Only Info */}
-                      <div className="grid grid-cols-4 gap-4 mb-4 opacity-70 pointer-events-none">
-                        <div className="col-span-2">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase">Descrição</label>
-                          <input value={analystSelectedItem.descricao} readOnly className="w-full bg-slate-100 border-none rounded px-2 py-1 text-xs text-slate-600" />
+                    <form ref={analystFormRef} onSubmit={handleAnalystItemSubmit} className="space-y-4">
+
+                      {/* Row 1: Read Only Data */}
+                      <div className="flex gap-4">
+                        <div className="flex-[3]">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descrição</label>
+                          <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium truncate">
+                            {analystSelectedItem.descricao}
+                          </div>
                         </div>
-                        <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase">Marca</label>
-                          <input value={analystSelectedItem.marca} readOnly className="w-full bg-slate-100 border-none rounded px-2 py-1 text-xs text-slate-600" />
+                        <div className="flex-[2]">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Marca</label>
+                          <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium truncate">
+                            {analystSelectedItem.marca || '-'}
+                          </div>
                         </div>
-                        <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase">UN</label>
-                          <input value={analystSelectedItem.unidade} readOnly className="w-full bg-slate-100 border-none rounded px-2 py-1 text-xs text-slate-600" />
+                        <div className="w-24">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unidade</label>
+                          <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium flex items-center justify-between">
+                            {analystSelectedItem.unidade}
+                            <ArrowUpDown size={12} className="opacity-30" />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Analysis Fields */}
-                      <div className="grid grid-cols-12 gap-4 items-end">
-                        <div className="col-span-4">
-                          <label className="block text-[10px] font-bold text-purple-600 uppercase mb-1">Cód. Uni *</label>
+                      {/* Row 2: Inputs & Actions */}
+                      <div className="flex gap-4 items-end">
+                        <div className="flex-[2]">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Referência</label>
+                          <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium truncate">
+                            {analystSelectedItem.referencia || '-'}
+                          </div>
+                        </div>
+
+                        <div className="flex-[2]">
+                          <label className="block text-[10px] font-bold text-purple-600 uppercase mb-1">Cód. Uni <span className="text-purple-400">*</span></label>
                           <input
                             name="cod_uni"
                             defaultValue={analystSelectedItem.cod_reduzido_unisystem || ''}
                             autoFocus
                             required
                             type="text"
-                            className="w-full px-3 py-2 bg-white border border-purple-200 rounded text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                            className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-shadow"
+                            placeholder="Digite o código..."
                           />
                         </div>
-                        <div className="col-span-8 flex gap-3">
-                          <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200">
-                            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                              <input type="radio" name="acao" value="ok" defaultChecked className="text-purple-600 focus:ring-purple-500" />
-                              <span>Ok</span>
+
+                        <div className="flex-[2]">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ação *</label>
+                          <div className="flex p-1 bg-white border border-slate-200 rounded-lg h-[38px]">
+                            {/* Custom Radio Group Implementation */}
+                            <label className="flex-1 relative cursor-pointer group">
+                              <input type="radio" name="acao" value="ok" defaultChecked className="peer sr-only" />
+                              <div className="w-full h-full flex items-center justify-center rounded text-xs font-bold text-slate-400 peer-checked:text-blue-600 peer-checked:bg-white transition-all">
+                                Ok
+                              </div>
                             </label>
-                            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                              <input type="radio" name="acao" value="devolver" className="text-red-600 focus:ring-red-500" />
-                              <span>Devolver</span>
+                            <label className="flex-1 relative cursor-pointer group">
+                              <input type="radio" name="acao" value="devolver" className="peer sr-only" />
+                              <div className="w-full h-full flex items-center justify-center rounded text-xs font-bold text-slate-400 peer-checked:text-red-600 peer-checked:bg-red-100 transition-all">
+                                Devolver
+                              </div>
                             </label>
                           </div>
-                          <button type="button" onClick={() => setAnalystSelectedItem(null)} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase bg-white border border-slate-200 rounded hover:bg-slate-50">Cancelar</button>
-                          <button type="submit" className="flex-1 py-2 text-xs font-bold text-white uppercase bg-purple-600 rounded hover:bg-purple-700 shadow-sm">Salvar Análise do Item</button>
                         </div>
                       </div>
+
+                      {/* Footer Buttons */}
+                      <div className="flex gap-4 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => setAnalystSelectedItem(null)}
+                          className="px-6 py-3 bg-slate-50 text-slate-500 font-bold rounded-lg text-xs uppercase tracking-wide hover:bg-slate-100 transition-colors flex items-center gap-2"
+                        >
+                          CANCELAR <Ban size={14} className="opacity-50" />
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 py-3 bg-purple-600 text-white font-extrabold rounded-lg text-sm uppercase tracking-wide hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all transform active:scale-[0.99]"
+                        >
+                          SALVAR ANÁLISE DO ITEM
+                        </button>
+                      </div>
+
                     </form>
                   </div>
                 ) : (
@@ -615,7 +798,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                           <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-24">Marca</th>
                           <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-20">Ref</th>
                           <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-16 text-center">UN</th>
-                          {isAnalystMode && <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-24">Cód. Uni</th>}
+                          {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
+                            <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-24">Cód. Uni</th>
+                          )}
                           <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-16 text-center">Ação</th>
                         </tr>
                       </thead>
@@ -635,8 +820,11 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                             <td className="py-2 px-4 text-xs text-slate-500">{item.marca || '-'}</td>
                             <td className="py-2 px-4 text-xs text-slate-500">{item.referencia || '-'}</td>
                             <td className="py-2 px-4 text-center text-xs text-slate-500">{item.unidade}</td>
-                            {isAnalystMode && (
-                              <td className="py-2 px-4 text-xs font-mono text-purple-600">
+                            {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
+                              <td className={`py-2 px-4 text-xs font-mono font-bold ${item.status === 'Aprovado' ? 'text-green-600' :
+                                (item.status === 'Reprovado' || item.status === 'Devolvido') ? 'text-red-500' :
+                                  'text-slate-400'
+                                }`}>
                                 {item.cod_reduzido_unisystem || '-'}
                               </td>
                             )}
@@ -650,20 +838,24 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                                   <Pencil size={14} />
                                 </button>
                               ) : canEditItems ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    onClick={() => handleEditItem(item)}
-                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteItem(item)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
+                                contextData.status === 'Devolvido' && item.status === 'Aprovado' ? (
+                                  <span className="text-slate-300">-</span>
+                                ) : (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => handleEditItem(item)}
+                                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteItem(item)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                )
                               ) : (
                                 <span className="text-slate-300">-</span>
                               )}
@@ -701,7 +893,8 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
 
           <div className="flex gap-3">
             {/* Save Draft Action */}
-            {(isNew || (contextData.status === 'Aberto' && isOwner)) && (
+            {/* Save Draft Action */}
+            {(isNew || (contextData.status === 'Aberto' && (isOwner || hasFullManagement))) && (
               <>
                 <button onClick={() => handleGlobalAction('SAVE')} disabled={loading} className="px-5 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg text-sm hover:bg-slate-50 transition-colors flex items-center gap-2 disabled:opacity-50">
                   <Save size={16} /> Salvar Dados
@@ -744,6 +937,21 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
               </>
             )}
 
+            {/* Finalized State Actions */}
+            {/* Show Notify button for Finalized OR Devolvido (ONLY if Analyst/Registrar) */}
+            {((contextData.status === 'Finalizado' || contextData.status === 'Devolvido') && isRegistrar) && (
+              <button onClick={handleNotifyWhatsapp} className="px-5 py-2 bg-[#25D366] text-white font-bold rounded-lg text-sm hover:bg-[#128C7E] shadow-md transition-colors flex items-center gap-2">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg> Notificar Solicitante
+              </button>
+            )}
+
+            {/* Correction/Returned Actions (Owner) */}
+            {contextData.status === 'Devolvido' && isOwner && (
+              <button onClick={() => handleGlobalAction('RESEND')} disabled={loading} className="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 shadow-md transition-colors flex items-center gap-2 disabled:opacity-50">
+                <Send size={16} /> Reenviar Correção
+              </button>
+            )}
+
             {/* Global Reopen Action */}
             {canReopen && (
               <button onClick={() => handleGlobalAction('REOPEN')} disabled={loading} className="px-5 py-2 bg-yellow-100 text-yellow-700 font-bold rounded-lg text-sm hover:bg-yellow-200 transition-colors flex items-center gap-2 disabled:opacity-50">
@@ -754,6 +962,14 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
         </div>
 
       </div>
+
+      {currentRequestId && (
+        <AuditLogModal
+          isOpen={isAuditOpen}
+          onClose={() => setIsAuditOpen(false)}
+          registroId={currentRequestId}
+        />
+      )}
     </div>
   );
 };

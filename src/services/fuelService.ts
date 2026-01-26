@@ -64,10 +64,11 @@ export const fuelService = {
                 *,
                 usuario:usuarios(nome),
                 fazenda:fazendas(nome),
-                posto:postos(nome)
+                posto:postos(nome, nuntec_reservoir_id)
             `,
       )
-      .order('data_abastecimento', { ascending: false });
+      .order('data_abastecimento', { ascending: false })
+      .limit(5000); // Increase limit to ensure Nuntec deduplication covers enough history
 
     if (filters?.fazenda_id) {
       query = query.eq('fazenda_id', filters.fazenda_id);
@@ -171,7 +172,7 @@ export const fuelService = {
     }
   },
 
-  async confirmBaixa(id: string, userId: string) {
+  async confirmBaixa(id: string, userId: string, nuntecGeneratedId?: string) {
     if (!userId) {
       console.error('UserId is missing for confirmBaixa audit');
     }
@@ -185,7 +186,10 @@ export const fuelService = {
 
     const { data, error } = await supabase
       .from('abastecimentos')
-      .update({ status: 'BAIXADO' })
+      .update({
+        status: 'BAIXADO',
+        ...(nuntecGeneratedId ? { nuntec_generated_id: nuntecGeneratedId } : {})
+      })
       .eq('id', id)
       .select()
       .single();

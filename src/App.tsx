@@ -25,6 +25,9 @@ const StationManagement = lazy(() =>
 const FuelingList = lazy(() =>
   import('./pages/FuelingList').then((module) => ({ default: module.FuelingList })),
 );
+const ActivityHistory = lazy(() =>
+  import('./pages/ActivityHistory').then((module) => ({ default: module.ActivityHistory })),
+);
 
 
 // Wrapper for protected routes
@@ -36,6 +39,10 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
+
+const HomeDashboard = lazy(() =>
+  import('./pages/HomeDashboard').then((module) => ({ default: module.HomeDashboard })),
+);
 
 // Router Configuration
 const router = createBrowserRouter([
@@ -57,7 +64,11 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/solicitacoes" replace />,
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <HomeDashboard />
+          </Suspense>
+        ),
       },
       {
         path: 'solicitacoes',
@@ -105,6 +116,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<FullScreenLoading />}>
             <FuelingList />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'historico',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <ActivityHistory />
           </Suspense>
         ),
       },

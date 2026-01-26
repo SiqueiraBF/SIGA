@@ -340,9 +340,8 @@ export function FuelingFormModal({
                       className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       <option value="">Selecione o motivo...</option>
-                      <option value="QUEBRADO">Quebrado / Defeito</option>
-                      <option value="SEM_EQUIPAMENTO">Equipamento não possui</option>
-                      <option value="OUTRO">Outro (Obs nos detalhes)</option>
+                      <option value="QUEBRADO">Quebrado/Defeito</option>
+                      <option value="NAO_POSSUI">Não Possui</option>
                     </select>
                   )}
                 </div>

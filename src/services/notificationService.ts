@@ -82,29 +82,48 @@ export const notificationService = {
   generateWhatsappLink(request: any, items: any[], userPhone: string) {
     if (!userPhone) return null;
 
-    // 1. Sanitizar telefone (Manter apenas números)
-    // Formato esperado entrada: +55 66 9651-6132 -> Saída: 556696516132
     const cleanPhone = userPhone.replace(/\D/g, '');
+    const isDevolucao = request.status === 'Devolvido';
+
+    // Se for devolução, filtra apenas itens reprovados/devolvidos. Senão, mostra todos.
+    const relevantItems = isDevolucao
+      ? items.filter(i => i.status === 'Reprovado' || i.status === 'Devolvido')
+      : items;
+
+    if (isDevolucao && relevantItems.length === 0) {
+      // Fallback se não detectar itens específicos (ex: devolução geral)
+    }
 
     // 2. Montar Mensagem
     const linhas = [
-      `*Notificação de Cadastro - Sistema Nadiana*`,
+      `*${isDevolucao ? '⚠️ Ação Necessária' : '✅ Notificação de Cadastro'} - Sistema Nadiana*`,
       ``,
       `Prezada(o) *${request.solicitante_nome || 'Usuário'}*,`,
-      `Informamos que a solicitação *SC #${request.numero}* foi concluída com sucesso. ✅`,
+      isDevolucao
+        ? `Sua solicitação *SC #${request.numero}* possui itens devolvidos/reprovados que precisam de correção.`
+        : `Informamos que a solicitação *SC #${request.numero}* foi concluída com sucesso.`,
       ``,
       `*Resumo:*`,
       `Filial: ${request.filial_nome || 'N/A'}`,
-      `Prioridade: ${request.prioridade} ${request.prioridade === 'Urgente' ? '🚨' : ''}`,
-      `Obs: ${request.observacao || '-'}`,
+      // Removed confusing "General Reason" which was just user observation
+      ...(isDevolucao ? [] : [`Prioridade: ${request.prioridade}`, `Obs: ${request.observacao || '-'}`]),
       ``,
-      `*Relação de Produtos:*`,
+      `*${isDevolucao ? 'Itens Reprovados / Pendentes:' : 'Relação de Produtos:'}*`,
     ];
 
     // Adicionar itens
-    items.forEach((item, index) => {
-      const codigo = item.cod_reduzido_unisystem ? ` -> *Cód: ${item.cod_reduzido_unisystem}*` : '';
-      linhas.push(`${index + 1}. ${item.descricao} (Ref: ${item.referencia || '-'}) ${codigo}`);
+    relevantItems.forEach((item, index) => {
+      // If code matches rejection reason (hack for table display), don't show it as "Code", only as "Reason"
+      const showCode = item.cod_reduzido_unisystem && item.cod_reduzido_unisystem !== item.motivo_reprovacao;
+
+      const codigo = showCode ? ` -> *Cód: ${item.cod_reduzido_unisystem}*` : '';
+
+      // If returned, emphasize the reason clearly
+      const motivo = isDevolucao && item.motivo_reprovacao
+        ? `\n   🔴 *Motivo:* _${item.motivo_reprovacao}_`
+        : '';
+
+      linhas.push(`${index + 1}. ${item.descricao} (Ref: ${item.referencia || '-'}) ${codigo}${motivo}`);
     });
 
     linhas.push(``);

@@ -31,48 +31,48 @@ const CONFIGURABLE_MODULES: {
   supportsManualFueling?: boolean;
   supportsIgnoreNuntec?: boolean;
 }[] = [
-  {
-    key: 'gestao_combustivel',
-    label: 'Baixas de Combustível',
-    description: 'Controle de abastecimentos e estoque',
-    supportsConfirm: true,
-    confirmLabel: 'Confirmar Baixa',
-    confirmDescription: 'Efetivar saída de estoque',
-    supportsFleetManagement: true,
-    supportsManualFueling: true,
-    supportsIgnoreNuntec: true,
-  },
-  {
-    key: 'gestao_postos',
-    label: 'Gestão de Postos',
-    description: 'Cadastros de reservatórios',
-    supportsConfirm: false,
-    simpleEdit: true,
-  },
-  {
-    key: 'abrir_solicitacao',
-    label: 'Solicitações de Cadastro',
-    description: 'Abertura, acompanhamento e análise',
-    supportsConfirm: true,
-    confirmLabel: 'Aprovar / Analisar',
-    confirmDescription: 'Acesso ao painel de análise',
-  },
-  {
-    key: 'gestao_usuarios',
-    label: 'Gestão de Usuários',
-    description: 'Administração do sistema',
-    supportsConfirm: false,
-    simpleEdit: true,
-    supportsRoleManagement: true,
-  },
-  {
-    key: 'config_fazendas',
-    label: 'Config. Fazendas',
-    description: 'Cadastros de filiais',
-    supportsConfirm: false,
-    simpleEdit: true,
-  },
-];
+    {
+      key: 'gestao_combustivel',
+      label: 'Baixas de Combustível',
+      description: 'Controle de abastecimentos e estoque',
+      supportsConfirm: true,
+      confirmLabel: 'Confirmar Baixa',
+      confirmDescription: 'Efetivar saída de estoque',
+      supportsFleetManagement: true,
+      supportsManualFueling: true,
+      supportsIgnoreNuntec: true,
+    },
+    {
+      key: 'gestao_postos',
+      label: 'Gestão de Postos',
+      description: 'Cadastros de reservatórios',
+      supportsConfirm: false,
+      simpleEdit: true,
+    },
+    {
+      key: 'abrir_solicitacao',
+      label: 'Solicitações de Cadastro',
+      description: 'Abertura, acompanhamento e análise',
+      supportsConfirm: true,
+      confirmLabel: 'Aprovar / Analisar',
+      confirmDescription: 'Acesso ao painel de análise',
+    },
+    {
+      key: 'gestao_usuarios',
+      label: 'Gestão de Usuários',
+      description: 'Administração do sistema',
+      supportsConfirm: false,
+      simpleEdit: true,
+      supportsRoleManagement: true,
+    },
+    {
+      key: 'config_fazendas',
+      label: 'Config. Fazendas',
+      description: 'Cadastros de filiais',
+      supportsConfirm: false,
+      simpleEdit: true,
+    },
+  ];
 
 export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [roles, setRoles] = useState<Funcao[]>([]);
@@ -238,11 +238,10 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   <button
                     key={role.id}
                     onClick={() => setSelectedRoleId(role.id)}
-                    className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between group ${
-                      selectedRoleId === role.id
+                    className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between group ${selectedRoleId === role.id
                         ? 'bg-blue-600 border-blue-600 text-white shadow-md'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:shadow-sm'
-                    }`}
+                      }`}
                   >
                     <span className="font-semibold">{role.nome}</span>
                     <ChevronRight
@@ -393,6 +392,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
                                     >
                                       <option value="ALL">👀 Todos</option>
+                                      <option value="SAME_FARM">🏠 Mesma Fazenda</option>
                                       <option value="OWN_ONLY">👤 Apenas Próprios</option>
                                     </select>
                                   </div>

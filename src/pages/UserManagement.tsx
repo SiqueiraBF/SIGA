@@ -26,6 +26,7 @@ import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { TableActions } from '../components/ui/TableActions';
+import { TableSkeleton } from '../components/ui/TableSkeleton';
 
 // Helper for Sort
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -37,6 +38,7 @@ export function UserManagement() {
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<Usuario[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // Filters
   const [filterRole, setFilterRole] = useState<string>('all');
@@ -118,6 +120,8 @@ export function UserManagement() {
       setFuncoes(rolesLoaded.filter((f): f is Funcao => f !== null));
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -272,6 +276,26 @@ export function UserManagement() {
     filterFarm !== 'all' ||
     filterStatus !== 'all'
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <PageHeader
+            title="Gestão de Usuários"
+            subtitle="Gerencie usuários e permissões do sistema"
+            icon={Users}
+          >
+            <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg opacity-50 cursor-not-allowed">
+              <Plus size={20} />
+              Novo Usuário
+            </button>
+          </PageHeader>
+          <TableSkeleton rows={6} columns={4} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { fuelService } from '../services/fuelService';
 import { nuntecService } from '../services/nuntecService';
@@ -27,7 +28,7 @@ import {
   EyeOff,
   ShieldCheck,
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, subDays } from 'date-fns';
 import { FuelingFormModal } from '../components/FuelingFormModal';
 import { FuelingDetailsModal } from '../components/FuelingDetailsModal';
 import { FuelingResolutionModal } from '../components/FuelingResolutionModal';
@@ -37,7 +38,7 @@ import { ComplianceDashboard } from '../components/dashboard/ComplianceDashboard
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatsCard } from '../components/ui/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 import { TableSkeleton } from '../components/ui/TableSkeleton';
 import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 import { FilterBar } from '../components/ui/FilterBar';
@@ -56,13 +57,13 @@ export function FuelingList() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([]);
-  const [pendenciasNuntec, setPendenciasNuntec] = useState<NuntecTransfer[]>([]);
-  const [nuntecError, setNuntecError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [syncStartDate, setSyncStartDate] = useState<string | null>(null);
-  const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
+  // Removed explicit abast state, now derived from infinite query
+  // const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([]);
+  // Removed local state: pendenciasNuntec, nuntecError, lastUpdate, syncStartDate, ignoredIds
+  // showIgnored logic remains
   const [showIgnored, setShowIgnored] = useState(false);
+
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [postos, setPostos] = useState<(Posto & { fazenda: { nome: string } })[]>([]);
   const [usuarios, setUsuarios] = useState<{ id: string; nome: string }[]>([]);
@@ -82,17 +83,13 @@ export function FuelingList() {
   }, [location.state, searchParams]);
 
   // Filters & View Mode
-  // Filters & View Mode
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [filterEndDate, setFilterEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchTerm, setSearchTerm] = useState('');
 
   // New Filters Requested
   const [filterVeiculo, setFilterVeiculo] = useState('');
   const [filterSemMedidor, setFilterSemMedidor] = useState(false);
-
-  // Removed misplaced hook
-
 
   // Filtro Interativo (Similar ao RegistrarDashboard)
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDENTE'>('ALL');
@@ -158,16 +155,167 @@ export function FuelingList() {
   const viewScope = role?.permissoes?.[MODULE_KEY]?.view_scope;
   const canViewAllFarms = viewScope === 'ALL' || role?.nome === 'Administrador';
 
+  // --- Infinite Query for Abastecimentos ---
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isLoadingAbastecimentos,
+    isError
+  } = useInfiniteQuery({
+    queryKey: ['abastecimentos', {
+      startDate: filterStartDate,
+      endDate: filterEndDate,
+      // Include other filters in key to reset list on change could be good, but we filter client side too?
+      // Actually we are moving to Server Side pagination, so we MUST include filters in key if we want server filtering.
+      // But currently getUser relies on client filtering for some stuff.
+      // For now, let's keep Server Side strictly for Pagination + Date Range + Farm Scope (if we moved that).
+      // The current getAbastecimentos only filters by Date, Farm, Posto.
+    }],
+    queryFn: async ({ pageParam = 0 }) => {
+      return fuelService.getAbastecimentos({
+        dataInicio: filterStartDate || undefined,
+        dataFim: filterEndDate || undefined,
+        page: pageParam as number,
+        limit: 50
+      });
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === 50 ? allPages.length : undefined;
+    },
+    staleTime: 1000 * 60 * 5, // 5 min
+  });
+
+  const abastecimentos = useMemo(() => {
+    return data?.pages.flatMap(page => page) || [];
+  }, [data]);
+
+  // Load static data (Postos, Fazendas, Users) only ONCE
   useEffect(() => {
-    loadData();
+    loadStaticData();
   }, []);
 
-  // Load Nuntec Pendencies when entering Integration view or after data load
-  useEffect(() => {
-    if (viewMode === 'INTEGRATION' && postos.length > 0) {
-      loadNuntecData();
+  async function loadStaticData() {
+    try {
+      const [dataFazendas, dataPostos, dataUsuarios] = await Promise.all([
+        db.getFazendas(),
+        fuelService.getPostos(),
+        db.getAllUsers(),
+      ]);
+      setFazendas(dataFazendas);
+      setPostos(dataPostos);
+      setUsuarios(dataUsuarios);
+      setLoading(false); // Initial static load done
+    } catch (error) {
+      console.error(error);
+      setLoading(false);
     }
-  }, [viewMode, postos, abastecimentos]);
+  }
+
+  // Reload data (invalidate query) when dates change is handled automatically by queryKey
+
+  // Intersection Observer for Infinite Scroll
+  const observerTarget = React.useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && hasNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 1.0 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [observerTarget, hasNextPage, fetchNextPage]);
+
+
+  // --- React Query Implementation for Nuntec ---
+
+  // 1. Integration Config
+  const { data: config } = useQuery({
+    queryKey: ['integration-config'],
+    queryFn: db.getIntegrationConfig,
+    staleTime: 1000 * 60 * 30, // 30 min
+    enabled: viewMode === 'INTEGRATION',
+  });
+  const syncStartDate = config?.sync_start_date || null;
+
+  // 2. Ignored Set
+  const { data: ignoredList = [] } = useQuery({
+    queryKey: ['nuntec-ignored', user?.id],
+    queryFn: db.getIgnoredNuntecTransfers,
+    staleTime: 1000 * 60 * 5,
+    enabled: viewMode === 'INTEGRATION' && !!user,
+  });
+  const ignoredIds = useMemo(() => new Set(ignoredList), [ignoredList]);
+
+  // 3. Raw Pending Transfers (from API)
+  // Define configuredPostos first to be used in query
+  const configuredPostos = useMemo(() =>
+    postos.filter((p) => p.nuntec_reservoir_id && p.tipo === 'VIRTUAL'),
+    [postos]
+  );
+
+  const {
+    data: rawTransfers = [],
+    isLoading: isLoadingNuntec,
+    error: rawNuntecError,
+    dataUpdatedAt
+  } = useQuery({
+    queryKey: ['nuntec-transfers', { farmId: user?.fazenda_id }],
+    queryFn: async () => {
+      // Pass empty array for abastecimentos to fetch ALL candidates without filtering locally yet
+      return nuntecService.getPendingTransfers(configuredPostos, []);
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+    gcTime: 1000 * 60 * 30,  // Keep in memory for 30 min
+    enabled: viewMode === 'INTEGRATION' && configuredPostos.length > 0,
+    retry: 1
+  });
+
+  const nuntecError = rawNuntecError ? (rawNuntecError as Error).message : null;
+  const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
+
+  // 4. Derived State: Filter Raw Transfers vs Installed Abastecimentos
+  const pendenciasNuntec = useMemo(() => {
+    // a. Farm Filter
+    let visible = rawTransfers;
+    if (!canViewAllFarms && user?.fazenda_id) {
+      const visibleReservoirIds = new Set(
+        configuredPostos
+          .filter((p) => p.fazenda_id === user.fazenda_id)
+          .map((p) => p.nuntec_reservoir_id),
+      );
+      visible = rawTransfers.filter(
+        (t) =>
+          t['pointing-in']['reservoir-id'] &&
+          visibleReservoirIds.has(t['pointing-in']['reservoir-id']),
+      );
+    }
+
+    // b. Active Abastecimentos Filter (Remove items that already have a linked abastecimento)
+    const existingTransferIds = new Set(
+      abastecimentos
+        .filter((a) => a.nuntec_transfer_id)
+        .map((a) => String(a.nuntec_transfer_id))
+    );
+
+    return visible.filter(t => !existingTransferIds.has(String(t.id)));
+
+  }, [rawTransfers, abastecimentos, canViewAllFarms, user, configuredPostos]);
 
   // Create a filtered view of data based on permissions
   const visibleAbastecimentos = useMemo(() => {
@@ -192,73 +340,11 @@ export function FuelingList() {
     return Array.from(set).sort();
   }, [visibleAbastecimentos]);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [dataAbastecimentos, dataFazendas, dataPostos, dataUsuarios] = await Promise.all([
-        fuelService.getAbastecimentos(),
-        db.getFazendas(),
-        fuelService.getPostos(),
-        db.getAllUsers(),
-      ]);
-      setAbastecimentos(dataAbastecimentos); // Store RAW data
-      setFazendas(dataFazendas);
-      setPostos(dataPostos);
-      setUsuarios(dataUsuarios);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadNuntecData() {
-    // Only load if configured postos exist AND are VIRTUAL (Gerente)
-    // The user requested that this tab ONLY show Virtual Stock pendencies
-    const configuredPostos = postos.filter((p) => p.nuntec_reservoir_id && p.tipo === 'VIRTUAL');
-    if (configuredPostos.length === 0) {
-      setPendenciasNuntec([]);
-      return;
-    }
-
-    try {
-      setNuntecError(null); // Reset error
-
-      // Fetch Config Date for UI
-      const config = await db.getIntegrationConfig();
-      setSyncStartDate(config?.sync_start_date || null);
-
-      // Fetch Ignored
-      const ignored = await db.getIgnoredNuntecTransfers();
-      setIgnoredIds(new Set(ignored));
-
-      const transfers = await nuntecService.getPendingTransfers(configuredPostos, abastecimentos);
-
-      setLastUpdate(new Date());
-
-      // Apply farm visibility filter for non-admins / restricted view
-      let visibleTransfers = transfers;
-      if (!canViewAllFarms && user?.fazenda_id) {
-        // Find visible reservoir IDs based on user farm
-        const visibleReservoirIds = new Set(
-          configuredPostos
-            .filter((p) => p.fazenda_id === user.fazenda_id)
-            .map((p) => p.nuntec_reservoir_id),
-        );
-        visibleTransfers = transfers.filter(
-          (t) =>
-            t['pointing-in']['reservoir-id'] &&
-            visibleReservoirIds.has(t['pointing-in']['reservoir-id']),
-        );
-      }
-
-      setPendenciasNuntec(visibleTransfers);
-    } catch (error: any) {
-      console.error('Error loading Nuntec data', error);
-      setNuntecError(error.message || 'Falha ao sincronizar com a Nuntec.');
-      setPendenciasNuntec([]); // Clear stale data on error to avoid confusion
-    }
-  }
+  // Removed manual loadData in favor of React Query
+  // Helper to re-fetch if needed (e.g. after edit)
+  const refetchData = () => {
+    queryClient.invalidateQueries({ queryKey: ['abastecimentos'] });
+  };
 
   const handleCreate = () => {
     setSelectedItem(undefined);
@@ -278,7 +364,7 @@ export function FuelingList() {
   const handleConfirm = async (item: Abastecimento, nuntecId?: string) => {
     try {
       await fuelService.confirmBaixa(item.id, user!.id, nuntecId);
-      await loadData();
+      refetchData();
       setIsDetailsOpen(false);
     } catch (error) {
       console.error(error);
@@ -294,7 +380,7 @@ export function FuelingList() {
     if (!confirm('Tem certeza que deseja EXCLUIR este registro?')) return;
     try {
       await fuelService.deleteAbastecimento(item.id, user!.id);
-      loadData();
+      refetchData();
     } catch (error) {
       console.error(error);
       alert('Erro ao excluir.');
@@ -302,7 +388,7 @@ export function FuelingList() {
   };
 
   const handleFormSave = () => {
-    loadData();
+    refetchData();
   };
 
   const handleResolveNuntec = (transfer: NuntecTransfer) => {
@@ -312,7 +398,7 @@ export function FuelingList() {
 
   const handleResolveSuccess = async () => {
     // Refresh local data (to see the new Abastecimento) and Nuntec list (to remove the item)
-    await loadData();
+    refetchData();
     // Force refresh of Nuntec data immediately after loadData finishes
     // (useEffect on abastecimentos will trigger, but let's be explicit if needed or let useEffect handle it)
   };
@@ -327,7 +413,7 @@ export function FuelingList() {
       return;
     try {
       await db.ignoreNuntecTransfer(transfer.id, user.id);
-      setIgnoredIds((prev) => new Set(prev).add(transfer.id));
+      queryClient.invalidateQueries({ queryKey: ['nuntec-ignored'] });
     } catch (e) {
       console.error(e);
       alert('Erro ao ignorar.');
@@ -338,11 +424,7 @@ export function FuelingList() {
     if (!window.confirm('Restaurar esta pendência para a lista principal?')) return;
     try {
       await db.restoreNuntecTransfer(transfer.id);
-      setIgnoredIds((prev) => {
-        const next = new Set(prev);
-        next.delete(transfer.id);
-        return next;
-      });
+      queryClient.invalidateQueries({ queryKey: ['nuntec-ignored'] });
     } catch (e) {
       console.error(e);
       alert('Erro ao restaurar.');
@@ -444,7 +526,7 @@ export function FuelingList() {
       } else {
         alert(`Processo Finalizado!\n\n🔍 Analisados: ${result.total}\n✅ Corrigidos: ${result.fixed}\n⚠️ Erros/Sem Dados: ${result.errors}`);
         // Force reload
-        loadData();
+        refetchData();
       }
     } catch (error: any) {
       alert('Erro ao processar reparo em massa: ' + error.message);
@@ -521,7 +603,7 @@ export function FuelingList() {
     searchTerm ||
     activeFilter === 'PENDENTE';
 
-  if (loading) {
+  if (loading || (isLoadingAbastecimentos && !data)) {
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -591,9 +673,9 @@ export function FuelingList() {
           className={`pb-3 px-4 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${viewMode === 'INTEGRATION' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
         >
           <Link size={16} /> Pendências Nuntec
-          {pendenciasNuntec.length > 0 && (
+          {pendenciasNuntec.filter(p => !ignoredIds.has(p.id)).length > 0 && (
             <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full">
-              {pendenciasNuntec.length}
+              {pendenciasNuntec.filter(p => !ignoredIds.has(p.id)).length}
             </span>
           )}
         </button>
@@ -948,6 +1030,16 @@ export function FuelingList() {
                   )}
                 </tbody>
               </table>
+
+              {/* Sentinel for Infinite Scroll */}
+              <div ref={observerTarget} className="h-4 p-4 flex justify-center w-full">
+                {isFetchingNextPage && (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                )}
+                {!hasNextPage && abastecimentos.length > 0 && (
+                  <span className="text-xs text-slate-400 italic">Todos os registros carregados</span>
+                )}
+              </div>
             </div>
           </div>
         </>

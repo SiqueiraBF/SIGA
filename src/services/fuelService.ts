@@ -24,6 +24,17 @@ export const fuelService = {
     return data as (Posto & { fazenda: { nome: string } })[];
   },
 
+  async getFazendas() {
+    const { data, error } = await supabase
+      .from('fazendas')
+      .select('*')
+      .eq('ativo', true)
+      .order('nome');
+
+    if (error) throw error;
+    return data as { id: string; nome: string; ativo: boolean }[];
+  },
+
   async createPosto(posto: Omit<Posto, 'id' | 'created_at'>) {
     const { data, error } = await supabase.from('postos').insert(posto).select().single();
 
@@ -56,7 +67,14 @@ export const fuelService = {
     posto_id?: string;
     dataInicio?: string;
     dataFim?: string;
+    page?: number;     // 0-indexed
+    limit?: number;    // Default 50
   }) {
+    const page = filters?.page || 0;
+    const limit = filters?.limit || 50;
+    const from = page * limit;
+    const to = from + limit - 1;
+
     let query = supabase
       .from('abastecimentos')
       .select(
@@ -68,7 +86,7 @@ export const fuelService = {
             `,
       )
       .order('data_abastecimento', { ascending: false })
-      .limit(5000); // Increase limit to ensure Nuntec deduplication covers enough history
+      .range(from, to);
 
     if (filters?.fazenda_id) {
       query = query.eq('fazenda_id', filters.fazenda_id);
@@ -80,7 +98,8 @@ export const fuelService = {
       query = query.gte('data_abastecimento', filters.dataInicio);
     }
     if (filters?.dataFim) {
-      query = query.lte('data_abastecimento', filters.dataFim);
+      // Append time to ensure we cover the entire end day
+      query = query.lte('data_abastecimento', `${filters.dataFim} 23:59:59`);
     }
 
     const { data, error } = await query;

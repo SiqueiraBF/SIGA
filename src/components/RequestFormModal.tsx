@@ -364,31 +364,45 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
     if (!form) return;
     const data = new FormData(form);
 
-    const codUni = data.get('cod_uni') as string;
-    const acao = data.get('acao') as string; // 'ok' or 'devolver'
+    const inputValue = data.get('cod_uni') as string;
+    const tipoTratativa = data.get('tipo_tratativa') as string;
+
+    if (!tipoTratativa) {
+      alert("Selecione uma classificação para o cadastro (Novo, Reativado, Existente ou Correção)");
+      return;
+    }
 
     setLoading(true);
     try {
       let updateData: any = {};
-      if (acao === 'devolver') {
-        // Use the input value (codUni) as the rejection reason AND the code (so it shows in table)
-        if (!codUni) throw new Error("Informe o motivo no campo Cód. Uni para devolver.");
+
+      if (tipoTratativa === 'CORRECAO') {
+        // Use the input value as the rejection reason
+        if (!inputValue) throw new Error("Informe o motivo da correção.");
         updateData = {
           status_item: 'Reprovado',
-          motivo_reprovacao: codUni,
-          cod_reduzido_unisystem: codUni
+          motivo_reprovacao: inputValue,
+          tipo_tratativa: 'CORRECAO'
         };
       } else {
-        // OK implies Approved
-        if (!codUni) throw new Error("Código UNI obrigatório para aprovar");
-        updateData = { status_item: 'Aprovado', cod_reduzido_unisystem: codUni, motivo_reprovacao: null }; // Clear any previous rejection reason
+        // Validation for Approved types
+        if (!inputValue) throw new Error("Código UNI obrigatório para aprovar");
+
+        updateData = {
+          status_item: 'Aprovado',
+          cod_reduzido_unisystem: inputValue,
+          motivo_reprovacao: null,
+          tipo_tratativa: tipoTratativa as any
+        };
       }
 
       await db.updateItem(analystSelectedItem.id, updateData, user!.id);
+
+      // Optimistic update
       setItems(prev => prev.map(i => i.id === analystSelectedItem.id ? { ...i, ...updateData, status: updateData.status_item } : i));
 
       setAnalystSelectedItem(null); // Clear selection
-      alert("Item analisado com sucesso!");
+      // alert("Item analisado com sucesso!"); // Removed for smoother flow
 
     } catch (err: any) {
       alert(err.message);
@@ -609,6 +623,20 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                 <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">
                   <Plus size={14} className="text-slate-400" /> {editingItem ? 'EDITAR ITEM' : 'NOVO ITEM'}
                 </div>
+
+                {/* Rejection Feedback Alert */}
+                {editingItem && (editingItem.status === 'Reprovado' || editingItem.status === 'Devolvido') && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                    <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={16} />
+                    <div>
+                      <h4 className="text-xs font-bold text-red-700 uppercase mb-1">Motivo da Devolução</h4>
+                      <p className="text-sm text-red-600 font-medium">
+                        {editingItem.motivo_reprovacao || editingItem.cod_reduzido_unisystem || "Verifique os dados e tente novamente."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <form ref={itemFormRef} onSubmit={handleCreatorItemSubmit} className="space-y-4">
 
                   {/* Row 1 */}
@@ -685,6 +713,10 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                       <Clock size={14} className="text-purple-500" /> EDITAR/ANALISAR ITEM
                     </div>
                     <form ref={analystFormRef} onSubmit={handleAnalystItemSubmit} className="space-y-4">
+                      {/* Hidden State for Action Selection */}
+                      <div className="hidden">
+                        {/* We will manage selection via state instead of direct radios for better control, or use radios with state */}
+                      </div>
 
                       {/* Row 1: Read Only Data */}
                       <div className="flex gap-4">
@@ -709,7 +741,47 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Row 2: Inputs & Actions */}
+                      {/* Action Selection Grid */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Classificação do Cadastro <span className="text-red-500">*</span></label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { id: 'NOVO', label: 'NOVO', color: 'peer-checked:bg-green-500 peer-checked:text-white border-green-200 text-green-700 bg-green-50' },
+                            { id: 'REATIVADO', label: 'REATIVADO', color: 'peer-checked:bg-blue-500 peer-checked:text-white border-blue-200 text-blue-700 bg-blue-50' },
+                            { id: 'EXISTENTE', label: 'EXISTENTE', color: 'peer-checked:bg-amber-500 peer-checked:text-white border-amber-200 text-amber-700 bg-amber-50' },
+                            { id: 'CORRECAO', label: 'CORREÇÃO', color: 'peer-checked:bg-red-500 peer-checked:text-white border-red-200 text-red-700 bg-red-50' }
+                          ].map((opt) => (
+                            <label key={opt.id} className="relative cursor-pointer group">
+                              <input
+                                type="radio"
+                                name="tipo_tratativa"
+                                value={opt.id}
+                                className="peer sr-only"
+                                required
+                                onChange={(e) => {
+                                  // Force re-render to update input label if needed
+                                  // For simplicity using DOM manipulation or simpler react state if possible. 
+                                  // But here we are in uncontrolled form mostly.
+                                  // Let's use a small local state for the input label
+                                  const lbl = document.getElementById('lbl-cod-uni');
+                                  if (lbl) lbl.innerText = e.target.value === 'CORRECAO' ? 'Motivo da Correção *' : 'Cód. Uni *';
+
+                                  const input = document.getElementById('input-cod-uni') as HTMLInputElement;
+                                  if (input) {
+                                    input.placeholder = e.target.value === 'CORRECAO' ? 'Descreva o motivo...' : 'Digite o código...';
+                                    input.focus();
+                                  }
+                                }}
+                              />
+                              <div className={`w-full py-2 flex items-center justify-center rounded-lg text-[10px] font-extrabold border uppercase transition-all ${opt.color} opacity-60 peer-checked:opacity-100 peer-checked:shadow-md hover:opacity-80`}>
+                                {opt.label}
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Row 2: Input & Logic */}
                       <div className="flex gap-4 items-end">
                         <div className="flex-[2]">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Referência</label>
@@ -718,41 +790,22 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex-[2]">
-                          <label className="block text-[10px] font-bold text-purple-600 uppercase mb-1">Cód. Uni <span className="text-purple-400">*</span></label>
+                        <div className="flex-[4]">
+                          <label id="lbl-cod-uni" className="block text-[10px] font-bold text-purple-600 uppercase mb-1">Cód. Uni <span className="text-purple-400">*</span></label>
                           <input
+                            id="input-cod-uni"
                             name="cod_uni"
                             defaultValue={analystSelectedItem.cod_reduzido_unisystem || ''}
-                            autoFocus
                             required
                             type="text"
-                            className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-shadow"
-                            placeholder="Digite o código..."
+                            className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-shadow placeholder:text-slate-300"
+                            placeholder="Selecione uma ação..."
                           />
-                        </div>
-
-                        <div className="flex-[2]">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ação *</label>
-                          <div className="flex p-1 bg-white border border-slate-200 rounded-lg h-[38px]">
-                            {/* Custom Radio Group Implementation */}
-                            <label className="flex-1 relative cursor-pointer group">
-                              <input type="radio" name="acao" value="ok" defaultChecked className="peer sr-only" />
-                              <div className="w-full h-full flex items-center justify-center rounded text-xs font-bold text-slate-400 peer-checked:text-blue-600 peer-checked:bg-white transition-all">
-                                Ok
-                              </div>
-                            </label>
-                            <label className="flex-1 relative cursor-pointer group">
-                              <input type="radio" name="acao" value="devolver" className="peer sr-only" />
-                              <div className="w-full h-full flex items-center justify-center rounded text-xs font-bold text-slate-400 peer-checked:text-red-600 peer-checked:bg-red-100 transition-all">
-                                Devolver
-                              </div>
-                            </label>
-                          </div>
                         </div>
                       </div>
 
                       {/* Footer Buttons */}
-                      <div className="flex gap-4 pt-3">
+                      <div className="flex gap-4 pt-2">
                         <button
                           type="button"
                           onClick={() => setAnalystSelectedItem(null)}
@@ -762,12 +815,11 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                         </button>
                         <button
                           type="submit"
-                          className="flex-1 py-3 bg-purple-600 text-white font-extrabold rounded-lg text-sm uppercase tracking-wide hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all transform active:scale-[0.99]"
+                          className="flex-1 py-3 bg-purple-600 text-white font-extrabold rounded-lg text-sm uppercase tracking-wide hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2"
                         >
-                          SALVAR ANÁLISE DO ITEM
+                          <CheckCircle2 size={18} /> CONFIRMAR ANÁLISE
                         </button>
                       </div>
-
                     </form>
                   </div>
                 ) : (
@@ -801,6 +853,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                           {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
                             <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-24">Cód. Uni</th>
                           )}
+                          {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
+                            <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-28 text-center">Classificação</th>
+                          )}
                           <th className="py-3 px-4 text-[10px] font-bold text-slate-400 uppercase w-16 text-center">Ação</th>
                         </tr>
                       </thead>
@@ -821,11 +876,31 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = ({
                             <td className="py-2 px-4 text-xs text-slate-500">{item.referencia || '-'}</td>
                             <td className="py-2 px-4 text-center text-xs text-slate-500">{item.unidade}</td>
                             {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
-                              <td className={`py-2 px-4 text-xs font-mono font-bold ${item.status === 'Aprovado' ? 'text-green-600' :
-                                (item.status === 'Reprovado' || item.status === 'Devolvido') ? 'text-red-500' :
-                                  'text-slate-400'
-                                }`}>
-                                {item.cod_reduzido_unisystem || '-'}
+                              <td
+                                className={`py-2 px-4 text-xs font-mono font-bold truncate max-w-[150px] ${item.status === 'Aprovado' || item.status === 'Existente' || item.status === 'Reativado' ? 'text-green-600' :
+                                  (item.status === 'Reprovado' || item.status === 'Devolvido') ? 'text-red-500' :
+                                    'text-slate-400'
+                                  }`}
+                                title={item.status === 'Reprovado' ? (item.motivo_reprovacao || item.cod_reduzido_unisystem) : item.cod_reduzido_unisystem}
+                              >
+                                {(item.status === 'Reprovado' || item.status === 'Devolvido')
+                                  ? (item.motivo_reprovacao || item.cod_reduzido_unisystem || 'Sem motivo')
+                                  : (item.cod_reduzido_unisystem || '-')}
+                              </td>
+                            )}
+                            {(isAnalystMode || ['Finalizado', 'Devolvido'].includes(contextData.status)) && (
+                              <td className="py-2 px-4 text-center">
+                                {item.tipo_tratativa ? (
+                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border ${item.tipo_tratativa === 'NOVO' ? 'text-green-700 bg-green-50 border-green-200' :
+                                      item.tipo_tratativa === 'REATIVADO' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+                                        item.tipo_tratativa === 'EXISTENTE' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+                                          'text-red-700 bg-red-50 border-red-200'
+                                    }`}>
+                                    {item.tipo_tratativa}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300 text-[10px]">-</span>
+                                )}
                               </td>
                             )}
                             <td className="py-2 px-4 text-center">

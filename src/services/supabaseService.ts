@@ -16,7 +16,7 @@ export const db = {
 
     const { data, error } = await supabase
       .from('solicitacoes')
-      .select('*')
+      .select('id, numero, data_abertura, status, prioridade, fazenda_id, usuario_id, created_at')
       .order('data_abertura', { ascending: false });
 
     if (error) {
@@ -24,6 +24,40 @@ export const db = {
       throw error;
     }
     return data || [];
+  },
+
+  async getRequestsOptimized(page = 1, pageSize = 50): Promise<{ data: any[], totalCount: number }> {
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    const { data, error, count } = await supabase
+      .from('solicitacoes')
+      .select(`
+        *,
+        fazenda:fazendas(nome),
+        usuario:usuarios(nome),
+        item_count:itens_solicitacao(count)
+      `, { count: 'exact' })
+      .order('data_abertura', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Error in getRequestsOptimized:', error);
+      throw error;
+    }
+
+    // Flatten data for easier frontend consumption
+    const flattened = data.map(item => ({
+      ...item,
+      items_count: item.item_count[0]?.count || 0,
+      fazenda_nome: item.fazenda?.nome,
+      usuario_nome: item.usuario?.nome
+    }));
+
+    return {
+      data: flattened,
+      totalCount: count || 0
+    };
   },
 
   async getRequestById(id: string): Promise<Solicitacao | null> {
@@ -74,6 +108,17 @@ export const db = {
       if (itemsError) throw itemsError;
     }
 
+    // [AUDIT] Log Creation
+    await supabase.from('audit_logs').insert([
+      {
+        usuario_id: userId,
+        acao: 'CRIAR',
+        tabela: 'Solicitacao',
+        registro_id: newRequest.id,
+        dados_novos: newRequest,
+      },
+    ]);
+
     return newRequest;
   },
 
@@ -82,9 +127,30 @@ export const db = {
     data: Partial<Solicitacao>,
     userId: string,
   ): Promise<void> {
+    // [AUDIT] Get old data
+    const { data: oldData } = await supabase
+      .from('solicitacoes')
+      .select('*')
+      .eq('id', requestId)
+      .single();
+
     const { error } = await supabase.from('solicitacoes').update(data).eq('id', requestId);
 
     if (error) throw error;
+
+    // [AUDIT] Log Update
+    if (oldData) {
+      await supabase.from('audit_logs').insert([
+        {
+          usuario_id: userId,
+          acao: data.status && data.status !== oldData.status ? 'STATUS' : 'EDITAR',
+          tabela: 'Solicitacao',
+          registro_id: requestId,
+          dados_anteriores: oldData,
+          dados_novos: { ...oldData, ...data },
+        },
+      ]);
+    }
   },
 
   async deleteRequest(requestId: string): Promise<void> {
@@ -117,19 +183,82 @@ export const db = {
       .single();
 
     if (error) throw error;
+
+    // [AUDIT] Log Item Creation
+    await supabase.from('audit_logs').insert([
+      {
+        usuario_id: userId,
+        acao: 'CRIAR', // Using CRIAR for item creation
+        tabela: 'ItemSolicitacao',
+        registro_id: data.id,
+        dados_novos: data,
+      },
+    ]);
+
     return data;
   },
 
   async updateItem(itemId: string, data: Partial<ItemSolicitacao>, userId: string): Promise<void> {
+    // [AUDIT] Get old data
+    const { data: oldData } = await supabase
+      .from('itens_solicitacao')
+      .select('*')
+      .eq('id', itemId)
+      .single();
+
     const { error } = await supabase.from('itens_solicitacao').update(data).eq('id', itemId);
 
     if (error) throw error;
+
+    // [AUDIT] Log Item Update
+    if (oldData) {
+      await supabase.from('audit_logs').insert([
+        {
+          usuario_id: userId,
+          acao: 'EDITAR',
+          tabela: 'ItemSolicitacao',
+          registro_id: itemId,
+          dados_anteriores: oldData,
+          dados_novos: { ...oldData, ...data },
+        },
+      ]);
+    }
   },
 
   async deleteItem(itemId: string, userId: string): Promise<void> {
+    // [AUDIT] Get old data
+    const { data: oldData } = await supabase
+      .from('itens_solicitacao')
+      .select('*')
+      .eq('id', itemId)
+      .single();
+
     const { error } = await supabase.from('itens_solicitacao').delete().eq('id', itemId);
 
     if (error) throw error;
+
+    // [AUDIT] Log
+    if (oldData) {
+      await supabase.from('audit_logs').insert([
+        {
+          usuario_id: userId,
+          acao: 'ITEM_EXCLUIDO',
+          tabela: 'ItemSolicitacao',
+          registro_id: oldData.solicitacao_id, // Log to parent request
+          dados_anteriores: oldData,
+        },
+      ]);
+
+      await supabase.from('audit_logs').insert([
+        {
+          usuario_id: userId,
+          acao: 'EXCLUIR',
+          tabela: 'ItemSolicitacao',
+          registro_id: itemId,
+          dados_anteriores: oldData,
+        }
+      ]);
+    }
   },
 
   // Farms (Fazendas)
@@ -188,8 +317,15 @@ export const db = {
   },
 
   // Users
-  async getAllUsers(): Promise<Usuario[]> {
-    const { data, error } = await supabase.from('usuarios').select('*').order('nome');
+  async getAllUsers(): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select(`
+        *,
+        funcao:funcoes(nome),
+        fazenda:fazendas(nome)
+      `)
+      .order('nome');
 
     if (error) throw error;
     return data || [];
@@ -251,7 +387,6 @@ export const db = {
     return data;
   },
 
-  // Integration Config (Nuntec)
   // Integration Config (Nuntec)
   async getIntegrationConfig(): Promise<IntegrationConfig | null> {
     const { data, error } = await supabase

@@ -28,6 +28,28 @@ const FuelingList = lazy(() =>
 const ActivityHistory = lazy(() =>
   import('./pages/ActivityHistory').then((module) => ({ default: module.ActivityHistory })),
 );
+const StockImport = lazy(() =>
+  import('./pages/StockImport').then((module) => ({ default: module.StockImport })),
+);
+const StockRequestList = lazy(() =>
+  import('./pages/StockRequestList').then((module) => ({ default: module.StockRequestList })),
+);
+const InvoiceConfirmation = lazy(() =>
+  import('./pages/InvoiceConfirmation').then((module) => ({ default: module.InvoiceConfirmation })),
+);
+const InvoiceDashboard = lazy(() =>
+  import('./pages/InvoiceDashboard').then((module) => ({ default: module.InvoiceDashboard })),
+);
+const DrainageList = lazy(() =>
+  import('./pages/DrainageList').then((module) => ({ default: module.DrainageList })),
+);
+const AuditReceipt = lazy(() =>
+  import('./pages/AuditReceipt').then((module) => ({ default: module.AuditReceipt })),
+);
+const CleaningList = lazy(() =>
+  import('./pages/CleaningList').then((module) => ({ default: module.CleaningList })),
+);
+
 
 
 // Wrapper for protected routes
@@ -124,6 +146,70 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<FullScreenLoading />}>
             <ActivityHistory />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'estoque/importar',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <StockImport />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'estoque/solicitacoes',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <StockRequestList />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'nfs/confirmacao',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <InvoiceConfirmation />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'nfs/dashboard',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <InvoiceDashboard />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'nfs/confirmacao',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <InvoiceConfirmation />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'drenagem',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <DrainageList />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'auditoria-recebimento',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <AuditReceipt />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'limpeza',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <CleaningList />
           </Suspense>
         ),
       },

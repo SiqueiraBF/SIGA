@@ -12,7 +12,12 @@ import {
   Building2,
   Lock,
   Fuel,
+  Package,
   Warehouse,
+  FileSpreadsheet,
+  Droplet,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Modulo } from '../types';
@@ -43,9 +48,22 @@ export function Sidebar() {
       modules: ['abrir_solicitacao'],
     },
     {
-      label: 'Análise de Cadastros',
+      label: 'Transferência de Estoque',
+      icon: <Package size={20} />,
+      path: '/estoque/solicitacoes',
+      modules: [],
+    },
+    // Dashboard moved to Requests tab
+    /* {
+      label: 'Dashboard de Cadastros',
       icon: <ClipboardList size={20} />,
       path: '/cadastros',
+      modules: ['analisar_cadastros'],
+    }, */
+    {
+      label: 'Gestão de Estoque',
+      icon: <FileSpreadsheet size={20} />, // Keeping FileSpreadsheet or maybe Package/Boxes? Let's keep consistent for now or change to Boxes
+      path: '/estoque/importar', // Keep path to avoid breaking routes, but behavior changes
       modules: ['analisar_cadastros'],
     },
     {
@@ -55,10 +73,29 @@ export function Sidebar() {
       modules: ['gestao_postos'],
     },
     {
+      label: 'Drenagem de Postos',
+      icon: <Droplet size={20} />,
+      path: '/drenagem',
+      modules: ['gestao_postos'], // Using same module permission as stations
+    },
+    {
+      label: 'Painel de NFs',
+      icon: <ClipboardList size={20} />, // Reusing ClipboardList or maybe BarChart2 (if imported)
+      path: '/nfs/dashboard',
+      modules: ['sys_admin'], // Restricted to Admins (who bypass checks) or users with this specific module
+    },
+
+    {
       label: 'Baixas de Combustível',
       icon: <Fuel size={20} />,
       path: '/abastecimentos',
       modules: ['gestao_combustivel', 'abast_lancar', 'abast_conferir'],
+    },
+    {
+      label: 'Auditoria de Recebimento',
+      icon: <ShieldCheck size={20} />,
+      path: '/auditoria-recebimento',
+      modules: ['gestao_combustivel'],
     },
     {
       label: 'Gestão de Usuários',
@@ -73,6 +110,12 @@ export function Sidebar() {
       modules: ['config_fazendas'],
     },
 
+    {
+      label: 'Limpeza e Organização',
+      icon: <Sparkles size={20} />,
+      path: '/limpeza',
+      modules: [],
+    },
   ];
 
   const allowedItems = menuItems.filter(
@@ -86,10 +129,10 @@ export function Sidebar() {
     <div className="flex flex-col h-screen w-64 bg-slate-900 text-white shadow-xl transition-all duration-300">
       <div className="p-6 border-b border-slate-800 flex items-center gap-3">
         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-          <span className="font-bold text-lg">G</span>
+          <span className="font-bold text-lg">S</span>
         </div>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Gravity</h1>
+          <h1 className="text-xl font-bold tracking-tight">SIGA</h1>
 
         </div>
       </div>

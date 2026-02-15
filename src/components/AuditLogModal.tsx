@@ -234,10 +234,15 @@ export function AuditLogModal({
             logs.map((log, index) => {
               const user = usuarios.find((u) => u.id === log.usuario_id);
               const changes = getChangedFields(log.dados_anteriores, log.dados_novos);
+              const action = log.acao?.toUpperCase() || 'EDITAR';
+
+              // Ocultar logs de edição que não resultaram em mudanças visíveis (ex: salvamento sem alteração)
+              if (changes.length === 0 && (action === 'EDITAR' || action === 'UPDATE')) {
+                return null;
+              }
 
               // Lógica refinada de Exibição (Título e Estilo)
               const getActionDisplay = () => {
-                const action = log.acao?.toUpperCase() || 'EDITAR';
                 const table = log.tabela || '';
 
                 // Logs de Itens
@@ -252,12 +257,19 @@ export function AuditLogModal({
                         text: 'text-green-700',
                       },
                     };
-                  if (action === 'EDITAR' || action === 'ITEM_ALTERADO')
+                  if (action === 'EDITAR' || action === 'ITEM_ALTERADO') {
+                    // Tenta pegar a descrição do item (dos dados novos ou anteriores)
+                    const itemDesc =
+                      (log.dados_novos as any)?.descricao ||
+                      (log.dados_anteriores as any)?.descricao ||
+                      '';
+
                     return {
-                      label: 'ITEM ALTERADO',
+                      label: itemDesc ? `ITEM ALTERADO: ${itemDesc}` : 'ITEM ALTERADO',
                       icon: Edit,
                       style: { bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700' },
                     };
+                  }
                   if (
                     action === 'EXCLUIR' ||
                     action === 'ITEM_EXCLUIDO' ||
@@ -317,6 +329,13 @@ export function AuditLogModal({
                       },
                     };
                 }
+
+                if (action === 'STATUS')
+                  return {
+                    label: 'ALTERAÇÃO DE STATUS',
+                    icon: Edit,
+                    style: { bg: 'bg-amber-50', border: 'border-amber-500', text: 'text-amber-700' },
+                  };
 
                 // Fallback
                 return {

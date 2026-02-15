@@ -7,3 +7,9 @@
     @apply bg-gray-50 text-gray-900;
   }
 }
+
+/* Remove default focus outline from Recharts */
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus {
+  outline: none !important;
+}

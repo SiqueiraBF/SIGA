@@ -21,7 +21,7 @@ import { UserDetailsModal } from '../components/UserDetailsModal';
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatsCard } from '../components/ui/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -114,10 +114,15 @@ export function UserManagement() {
       setUsers(usersList);
       setFazendas(allFarms);
 
-      // Load roles - manually since we might not have getAllRoles
-      const uniqueRoleIds = Array.from(new Set(usersList.map((u) => u.funcao_id)));
-      const rolesLoaded = await Promise.all(uniqueRoleIds.map((id) => db.getRole(id)));
-      setFuncoes(rolesLoaded.filter((f): f is Funcao => f !== null));
+      // Extract unique roles from the already joined data to populate filter dropdown
+      // This eliminates the need to fetch each role individually by ID
+      const rolesMap = new Map();
+      usersList.forEach(u => {
+        if (u.funcao_id && u.funcao) {
+          rolesMap.set(u.funcao_id, { id: u.funcao_id, nome: u.funcao.nome });
+        }
+      });
+      setFuncoes(Array.from(rolesMap.values()));
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
@@ -165,15 +170,11 @@ export function UserManagement() {
           aValue = a.login.toLowerCase();
           bValue = b.login.toLowerCase();
         } else if (sortColumn === 'funcao') {
-          const roleA = funcoes.find((r) => r.id === a.funcao_id);
-          const roleB = funcoes.find((r) => r.id === b.funcao_id);
-          aValue = roleA?.nome.toLowerCase() || '';
-          bValue = roleB?.nome.toLowerCase() || '';
+          aValue = a.funcao?.nome.toLowerCase() || '';
+          bValue = b.funcao?.nome.toLowerCase() || '';
         } else if (sortColumn === 'filial') {
-          const farmA = fazendas.find((f) => f.id === a.fazenda_id);
-          const farmB = fazendas.find((f) => f.id === b.fazenda_id);
-          aValue = farmA?.nome.toLowerCase() || 'zzz';
-          bValue = farmB?.nome.toLowerCase() || 'zzz';
+          aValue = a.fazenda?.nome.toLowerCase() || 'zzz';
+          bValue = b.fazenda?.nome.toLowerCase() || 'zzz';
         } else if (sortColumn === 'last_login') {
           aValue = a.last_login || '';
           bValue = b.last_login || '';
@@ -502,8 +503,6 @@ export function UserManagement() {
                 </tr>
               ) : (
                 filteredUsers.map((u) => {
-                  const role = funcoes.find((r) => r.id === u.funcao_id);
-                  const farm = fazendas.find((f) => f.id === u.fazenda_id);
                   const isSelected = selectedUsers.has(u.id);
 
                   return (
@@ -557,17 +556,17 @@ export function UserManagement() {
                       </td>
                       <td className="px-6 py-4 text-slate-600 font-mono text-sm">{u.login}</td>
                       <td className="px-6 py-4">
-                        <StatusBadge status={role?.nome || '?'} variant="info" size="sm" />
+                        <StatusBadge status={u.funcao?.nome || '?'} variant="info" size="sm" />
                       </td>
                       <td className="px-6 py-4">
-                        {farm ? (
+                        {u.fazenda ? (
                           <div className="flex items-center gap-2">
                             <Building2
                               size={14}
-                              className={farm.ativo ? 'text-green-600' : 'text-slate-400'}
+                              className="text-green-600"
                             />
-                            <span className={farm.ativo ? 'text-slate-700' : 'text-slate-400'}>
-                              {farm.nome}
+                            <span className="text-slate-700">
+                              {u.fazenda.nome}
                             </span>
                           </div>
                         ) : (

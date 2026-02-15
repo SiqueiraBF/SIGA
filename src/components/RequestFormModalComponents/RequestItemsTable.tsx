@@ -37,15 +37,14 @@ export function RequestItemsTable({
     return (
       <ArrowUpDown
         size={12}
-        className={`ml-1 inline cursor-pointer transition-colors ${
-          sortConfig?.key === colKey ? 'text-blue-600' : 'text-slate-300 hover:text-slate-500'
-        }`}
+        className={`ml-1 inline cursor-pointer transition-colors ${sortConfig?.key === colKey ? 'text-blue-600' : 'text-slate-300 hover:text-slate-500'
+          }`}
       />
     );
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (item: any) => {
+    switch (item.status_item) {
       case 'Aprovado':
         return (
           <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
@@ -64,13 +63,13 @@ export function RequestItemsTable({
             Devolvido
           </span>
         );
-      case 'Existente':
+      case 'Existente': // Legacy/Fallback
         return (
           <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
             Existente
           </span>
         );
-      case 'Reativado':
+      case 'Reativado': // Legacy/Fallback
         return (
           <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
             Reativado
@@ -127,6 +126,11 @@ export function RequestItemsTable({
                     Cód. UNI
                   </th>
                 )}
+                {showUniCode && (
+                  <th className="py-2.5 px-4 font-semibold text-slate-600 w-28 text-center text-xs uppercase tracking-wider">
+                    Classificação
+                  </th>
+                )}
                 <th
                   className="py-2.5 px-4 font-semibold text-slate-600 w-28 text-center cursor-pointer select-none"
                   onClick={() => onSort('status_item')}
@@ -147,11 +151,10 @@ export function RequestItemsTable({
               {fields.map((item: any, index: number) => (
                 <tr
                   key={item.id} // react-hook-form ID
-                  className={`group transition-colors hover:bg-blue-50/30 ${
-                    item.status_item === 'Reprovado' || item.status_item === 'Devolvido'
-                      ? 'bg-red-50/30'
-                      : ''
-                  }`}
+                  className={`group transition-colors hover:bg-blue-50/30 ${item.status_item === 'Reprovado' || item.status_item === 'Devolvido'
+                    ? 'bg-red-50/30'
+                    : ''
+                    }`}
                 >
                   <td className="py-3 px-4 text-center text-slate-400 font-mono text-xs">
                     {(index + 1).toString().padStart(2, '0')}
@@ -202,7 +205,22 @@ export function RequestItemsTable({
                       )}
                     </td>
                   )}
-                  <td className="py-3 px-4 text-center">{getStatusBadge(item.status_item)}</td>
+                  {showUniCode && (
+                    <td className="py-3 px-4 text-center">
+                      {item.tipo_tratativa ? (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${item.tipo_tratativa === 'NOVO' ? 'text-green-700 bg-green-50 border-green-200' :
+                          item.tipo_tratativa === 'REATIVADO' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+                            item.tipo_tratativa === 'EXISTENTE' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+                              'text-red-700 bg-red-50 border-red-200'
+                          }`}>
+                          {item.tipo_tratativa}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300 text-[10px]">-</span>
+                      )}
+                    </td>
+                  )}
+                  <td className="py-3 px-4 text-center">{getStatusBadge(item)}</td>
                   {showActionColumn && (
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

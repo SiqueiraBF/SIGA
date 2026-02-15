@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Edit2, Plus, Building2 } from 'lucide-react';
+import { Edit2, Plus, Building2, Droplet, Trash2 } from 'lucide-react'; // Added Droplet and Trash2
 import type { Posto, Fazenda } from '../types';
 
 // UI Kit
@@ -26,6 +26,9 @@ export function StationFormModal({
   const [ativo, setAtivo] = useState(true);
   const [nuntecReservoirId, setNuntecReservoirId] = useState('');
   const [tipo, setTipo] = useState<'FISICO' | 'VIRTUAL'>('FISICO');
+  const [tanquesAdicionais, setTanquesAdicionais] = useState<{ id: string; nome: string }[]>([]);
+  const [exibirNaDrenagem, setExibirNaDrenagem] = useState(true); // New State
+  const [novoTanque, setNovoTanque] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -36,12 +39,16 @@ export function StationFormModal({
         setAtivo(initialData.ativo !== false);
         setNuntecReservoirId(initialData.nuntec_reservoir_id || '');
         setTipo(initialData.tipo || 'FISICO');
+        setTanquesAdicionais(initialData.tanques_adicionais || []);
+        setExibirNaDrenagem(initialData.exibir_na_drenagem !== false); // Default to true if undefined
       } else {
         setNome('');
         setFazendaId('');
         setAtivo(true);
         setNuntecReservoirId('');
         setTipo('FISICO');
+        setTanquesAdicionais([]);
+        setExibirNaDrenagem(true);
       }
     }
   }, [isOpen, initialData]);
@@ -50,7 +57,19 @@ export function StationFormModal({
     e.preventDefault();
     setLoading(true);
     try {
-      await onSave({ nome, fazenda_id: fazendaId, ativo, nuntec_reservoir_id: nuntecReservoirId, tipo });
+      // Force drainage off for non-physical stations
+      const isPhysical = tipo === 'FISICO';
+      const finalDrainage = isPhysical ? exibirNaDrenagem : false;
+
+      await onSave({
+        nome,
+        fazenda_id: fazendaId, // Ensure we send the ID, not the object if incompatible
+        tipo,
+        ativo,
+        nuntec_reservoir_id: nuntecReservoirId, // Keep as string, backend will handle parsing
+        exibir_na_drenagem: finalDrainage,
+        tanques_adicionais: isPhysical ? tanquesAdicionais : null // Clear extra tanks if not physical
+      });
       onClose();
     } catch (error: any) {
       console.error('Erro ao salvar posto:', error);
@@ -181,6 +200,88 @@ export function StationFormModal({
                 </p>
               </div>
             </div>
+
+            {/* Configurações de Drenagem (Agrupado) */}
+            {tipo === 'FISICO' && (
+              <div className="pt-4 border-t border-slate-100 mt-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1 bg-blue-50 rounded text-blue-600">
+                    <Droplet size={14} />
+                  </div>
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Configurações de Drenagem
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
+                  {/* 1. Checkbox Exibir na Drenagem */}
+                  <label className="flex items-center gap-2 cursor-pointer select-none p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={exibirNaDrenagem}
+                      onChange={(e) => setExibirNaDrenagem(e.target.checked)}
+                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-bold text-slate-700 block">Exibir na Tela de Drenagem</span>
+                      <span className="text-[11px] text-slate-500 block">
+                        Se desmarcado, este posto não aparecerá na lista de drenagem em lote.
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* 2. Tanques Adicionais (Só faz sentido se for exibido e Fisico) */}
+                  <div className="pl-2 border-l-2 border-slate-100 ml-2">
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">
+                      Tanques Adicionais (Opcional)
+                    </label>
+
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={novoTanque}
+                        onChange={(e) => setNovoTanque(e.target.value)}
+                        placeholder="Nome do Tanque (Ex: Tanque 02)"
+                        className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (novoTanque.trim()) {
+                            setTanquesAdicionais([...tanquesAdicionais, { id: Math.random().toString(36).substr(2, 9), nome: novoTanque.trim() }]);
+                            setNovoTanque('');
+                          }
+                        }}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+
+                    {tanquesAdicionais.length > 0 && (
+                      <div className="space-y-2">
+                        {tanquesAdicionais.map((t, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border border-slate-200 text-sm shadow-sm">
+                            <span className="font-medium text-slate-700">{t.nome}</span>
+                            <button
+                              type="button"
+                              onClick={() => setTanquesAdicionais(tanquesAdicionais.filter((_, i) => i !== idx))}
+                              className="text-slate-400 hover:text-red-500 p-1 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      Adicione identificadores apenas se houver múltiplos reservatórios para este posto.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
 
           <ModalFooter>

@@ -5,8 +5,13 @@
       "destination": "https://nadiana.nuntec.com.br/:match*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|.*\\..*).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node@5.6.3"
+    }
+  }
 }

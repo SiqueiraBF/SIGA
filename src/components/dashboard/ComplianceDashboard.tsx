@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
     ShieldCheck,
     AlertTriangle,
@@ -55,7 +55,8 @@ export function ComplianceDashboard({
             noMeterPct: 0,
             topManagerModeVehicles: [],
             topNoMeterVehicles: [],
-            reasonDistribution: []
+            reasonDistribution: [],
+            total: 0
         };
 
         const managerMode = filteredData.filter(a => a.is_manager_mode);
@@ -94,7 +95,8 @@ export function ComplianceDashboard({
             noMeterCount: noMeter.length,
             noMeterPct: (noMeter.length / total) * 100,
             topManagerModeVehicles,
-            topNoMeterVehicles
+            topNoMeterVehicles,
+            total // Add total to stats
         };
     }, [filteredData]);
 
@@ -105,6 +107,84 @@ export function ComplianceDashboard({
         }
         return fazendas;
     }, [fazendas, canViewAllFarms, userFazendaId]);
+
+    // 3. Nuntec Integration for Accurate Totals
+    const [rawNuntecData, setRawNuntecData] = useState<any[]>([]); // Store raw data
+    const [loadingNuntec, setLoadingNuntec] = useState(false);
+
+    // 3a. Fetch Data Once (or when period changes - TODO)
+    useEffect(() => {
+        let mounted = true;
+        const fetchData = async () => {
+            setLoadingNuntec(true);
+            try {
+                // Fetch last 30 days
+                const consumptions = await import('../../services/nuntecService').then(m => m.nuntecService.getConsumptions(30));
+                if (mounted) setRawNuntecData(consumptions);
+            } catch (err) {
+                console.error("Failed to load Nuntec stats", err);
+            } finally {
+                if (mounted) setLoadingNuntec(false);
+            }
+        };
+        fetchData();
+        return () => { mounted = false; };
+    }, []); // Empty dependency array = Fetch once on mount
+
+    // 3b. Filter Data Correctly when Farm Changes (Instant)
+    const nuntecStats = useMemo(() => {
+        if (loadingNuntec || rawNuntecData.length === 0) return null;
+
+        let totalCount = 0;
+        let totalVolume = 0;
+
+        // Create a Map for fast lookup: ReservoirID -> FazendaID
+        const reservoirMap = new Map<string, string>();
+        const virtualReservoirs = new Set<string>();
+
+        postos.forEach(p => {
+            if (p.nuntec_reservoir_id) {
+                reservoirMap.set(String(p.nuntec_reservoir_id), p.fazenda_id);
+                if (p.tipo === 'VIRTUAL' || p.nome.toLowerCase().includes('gerente')) {
+                    virtualReservoirs.add(String(p.nuntec_reservoir_id));
+                }
+            }
+        });
+
+        // Filter & Sum
+        rawNuntecData.forEach(c => {
+            const resId = String(c['reservoir-id']);
+            const fazendaId = reservoirMap.get(resId);
+
+            // 1. Must be a known reservoir
+            // 2. Must NOT be Virtual (we want the physical baseline)
+            if (fazendaId && !virtualReservoirs.has(resId)) {
+                // 3. Must match current Farm Filter
+                if (
+                    (!canViewAllFarms && userFazendaId && fazendaId !== userFazendaId) ||
+                    (canViewAllFarms && selectedFazendaId !== 'ALL' && fazendaId !== selectedFazendaId)
+                ) {
+                    return;
+                }
+
+                totalCount++;
+                totalVolume += c.amount;
+            }
+        });
+
+        return { totalCount, totalVolume };
+    }, [rawNuntecData, postos, selectedFazendaId, userFazendaId, canViewAllFarms, loadingNuntec]);
+
+    // Override Total with Nuntec Data if available
+    const usefulTotalCount = nuntecStats ? nuntecStats.totalCount : stats.total;
+    // Safety check to avoid > 100% if sync is delayed
+    const displayTotalCount = Math.max(usefulTotalCount, stats.managerModeCount);
+
+    // Recalculate Percentages
+    const managerModeRealPct = displayTotalCount > 0
+        ? (stats.managerModeCount / displayTotalCount) * 100
+        : 0;
+
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -170,17 +250,32 @@ export function ComplianceDashboard({
                     </div>
 
                     <div className="mb-2 relative z-10">
-                        <div className="flex justify-between text-xs font-bold mb-1">
-                            <span className={stats.managerModePct > 5 ? 'text-red-600' : 'text-slate-600'}>
-                                {stats.managerModePct.toFixed(1)}% do Total
-                            </span>
-                            <span className="text-slate-400">Meta: &lt; 5%</span>
-                        </div>
+                        {loadingNuntec ? (
+                            <div className="flex justify-between items-center mb-1 h-[18px]">
+                                <span className="text-xs font-bold text-slate-400 italic animate-pulse">Calculando base...</span>
+                            </div>
+                        ) : (
+                            <div className="flex justify-between text-xs font-bold mb-1">
+                                <span className={managerModeRealPct > 5 ? 'text-red-600' : 'text-slate-600'}>
+                                    {managerModeRealPct.toFixed(1)}% do Total
+                                    {nuntecStats && (
+                                        <span className="text-[10px] text-slate-400 ml-1 font-normal">
+                                            (de {displayTotalCount})
+                                        </span>
+                                    )}
+                                </span>
+                                <span className="text-slate-400">Meta: &lt; 5%</span>
+                            </div>
+                        )}
                         <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                            <div
-                                className={`h-full rounded-full ${stats.managerModePct > 5 ? 'bg-red-500' : 'bg-orange-400'}`}
-                                style={{ width: `${Math.min(stats.managerModePct, 100)}%` }}
-                            />
+                            {loadingNuntec ? (
+                                <div className="h-full bg-slate-200 animate-pulse w-full" />
+                            ) : (
+                                <div
+                                    className={`h-full rounded-full ${managerModeRealPct > 5 ? 'bg-red-500' : 'bg-orange-400'}`}
+                                    style={{ width: `${Math.min(managerModeRealPct, 100)}%` }}
+                                />
+                            )}
                         </div>
                     </div>
                 </div>

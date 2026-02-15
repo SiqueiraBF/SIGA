@@ -16,7 +16,7 @@ import {
     RefreshCw
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatsCard } from '../components/ui/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 import { dashboardService, DashboardStats, FeedItem, TimelineEvent } from '../services/dashboardService';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';

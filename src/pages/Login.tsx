@@ -44,10 +44,10 @@ export function Login() {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
         <div className="bg-blue-600 p-8 text-center">
           <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-            <span className="font-bold text-2xl text-white">G</span>
+            <span className="font-bold text-2xl text-white">S</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Gravity Login</h1>
-          <p className="text-blue-100 text-sm">Acesse o sistema de gestão de cadastros</p>
+          <h1 className="text-2xl font-bold text-white mb-2">Acesso SIGA</h1>
+          <p className="text-blue-100 text-sm">Sistema Integrado de Gestão de Almoxarifado</p>
         </div>
 
         <div className="p-8">

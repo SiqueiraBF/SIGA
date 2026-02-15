@@ -32,7 +32,7 @@ export function ActivityHistory() {
 
     const filteredFeed = feed.filter(item =>
         item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.subtitle.toLowerCase().includes(searchTerm.toLowerCase())
+        item.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     if (loading) return <DashboardSkeleton />;

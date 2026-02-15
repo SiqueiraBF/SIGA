@@ -14,8 +14,8 @@ interface TimelineItemProps {
 export const TimelineItem = ({ event, isLast, onDelete }: TimelineItemProps) => (
     <div className="relative pl-8 pb-8 last:pb-0 group">
         {!isLast && <div className="absolute left-[11px] top-3 bottom-0 w-0.5 bg-slate-100"></div>}
-        <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white shadow-sm z-10 ${event.type === 'FISCAL' ? 'border-purple-500' : 'border-blue-500'}`}>
-            <div className={`w-2 h-2 rounded-full ${event.type === 'FISCAL' ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
+        <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white shadow-sm z-10 ${event.type === 'meeting' ? 'border-purple-500' : 'border-blue-500'}`}>
+            <div className={`w-2 h-2 rounded-full ${event.type === 'meeting' ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
         </div>
 
         <div className="relative group-hover:translate-x-1 transition-transform duration-200">

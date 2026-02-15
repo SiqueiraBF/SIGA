@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, RefreshCw, Truck } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, RefreshCw, Truck, ArrowUpDown } from 'lucide-react';
 import { vehicleService } from '../services/vehicleService';
 import type { Veiculo } from '../types';
 
@@ -18,6 +18,7 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'import'>('list');
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Veiculo; direction: 'asc' | 'desc' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load vehicles on mount/open
@@ -39,6 +40,44 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
       setLoading(false);
     }
   };
+
+  const handleSort = (key: keyof Veiculo) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedVehicles = [...vehicles].sort((a, b) => {
+    if (!sortConfig) return 0;
+
+    // Custom handling for ID (numeric sort)
+    if (sortConfig.key === 'id') {
+      const idA = parseInt(a.id) || 0;
+      const idB = parseInt(b.id) || 0;
+      return sortConfig.direction === 'asc' ? idA - idB : idB - idA;
+    }
+
+    const aValue = a[sortConfig.key];
+    const bValue = b[sortConfig.key];
+
+    if (aValue === bValue) return 0;
+
+    // Handle booleans (Status) separately or just as string comparison
+    if (typeof aValue === 'boolean') {
+      return sortConfig.direction === 'asc'
+        ? (Number(aValue) - Number(bValue))
+        : (Number(bValue) - Number(aValue));
+    }
+
+    const compareA = String(aValue || '').toLowerCase();
+    const compareB = String(bValue || '').toLowerCase();
+
+    if (compareA < compareB) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (compareA > compareB) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   // --- Drag & Drop logic ---
   const handleDragOver = (e: React.DragEvent) => {
@@ -78,6 +117,47 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
       await processCSV(text);
     };
     reader.readAsText(file, 'ISO-8859-1'); // Force Latin1 to handle accents like Ã
+  };
+
+
+
+  // --- Nuntec Sync Logic ---
+  const handleSync = async () => {
+    if (!confirm('Isso buscará veículos novos da Nuntec. Veículos já existentes não serão alterados. Deseja continuar?')) return;
+
+    setImporting(true);
+    try {
+      // 1. Fetch from Nuntec
+      const nuntecVehicles = await import('../services/nuntecService').then(m => m.nuntecService.getVehicles());
+
+      if (nuntecVehicles.length === 0) {
+        alert('Nenhum veículo encontrado na Nuntec ou falha na conexão.');
+        return;
+      }
+
+      // 2. Identify NEW vehicles only (Safe Mode)
+      // We check against the currently loaded 'vehicles' state
+      const existingIds = new Set(vehicles.map(v => v.id));
+      const newVehicles = nuntecVehicles.filter(v => !existingIds.has(v.id));
+
+      if (newVehicles.length === 0) {
+        alert('Todos os veículos da Nuntec já estão cadastrados. Nenhuma alteração feita.');
+        return;
+      }
+
+      console.log(`Sincronizando ${newVehicles.length} novos veículos...`);
+
+      // 3. Upsert Batch (Only new ones)
+      await vehicleService.upsertBatch(newVehicles);
+
+      alert(`Sincronização concluída! ${newVehicles.length} novos veículos adicionados.`);
+      loadVehicles(); // Reload list
+    } catch (error: any) {
+      console.error(error);
+      alert(`Erro na sincronização: ${error.message}`);
+    } finally {
+      setImporting(false);
+    }
   };
 
   const processCSV = async (text: string) => {
@@ -163,6 +243,19 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
           >
             Importar CSV
           </button>
+
+          <div className="flex-1 text-right">
+            <button
+              onClick={handleSync}
+              disabled={importing}
+              className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors flex items-center gap-2 ml-auto"
+            >
+              <RefreshCw size={14} className={importing ? 'animate-spin' : ''} />
+              {importing ? 'Sincronizando...' : 'Sincronizar Nuntec'}
+            </button>
+          </div>
+
+
         </div>
 
         {/* Content */}
@@ -234,20 +327,44 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-100">
                     <tr>
-                      <th className="px-4 py-3 w-24">ID</th>
-                      <th className="px-4 py-3">Identificação</th>
-                      <th className="px-4 py-3 w-32 text-center">Status</th>
+                      <th
+                        className="px-4 py-3 w-24 cursor-pointer hover:bg-slate-100 transition-colors group"
+                        onClick={() => handleSort('id')}
+                      >
+                        <div className="flex items-center gap-1">
+                          ID
+                          <ArrowUpDown size={12} className="text-slate-400 group-hover:text-slate-600" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                        onClick={() => handleSort('identificacao')}
+                      >
+                        <div className="flex items-center gap-1">
+                          Identificação
+                          <ArrowUpDown size={12} className="text-slate-400 group-hover:text-slate-600" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 py-3 w-32 text-center cursor-pointer hover:bg-slate-100 transition-colors group"
+                        onClick={() => handleSort('ativo')}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          Status
+                          <ArrowUpDown size={12} className="text-slate-400 group-hover:text-slate-600" />
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {vehicles.length === 0 ? (
+                    {sortedVehicles.length === 0 ? (
                       <tr>
                         <td colSpan={3} className="p-8 text-center text-slate-400">
                           Nenhum veículo cadastrado.
                         </td>
                       </tr>
                     ) : (
-                      vehicles.map((v) => (
+                      sortedVehicles.map((v) => (
                         <tr key={v.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3 font-mono text-slate-500">{v.id}</td>
                           <td className="px-4 py-3 font-medium text-slate-800">

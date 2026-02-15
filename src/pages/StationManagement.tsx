@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fuelService } from '../services/fuelService';
 import { db } from '../services/supabaseService';
 import { nuntecService } from '../services/nuntecService';
+import { drainageService, StationDrainage } from '../services/drainageService'; // Import added
 import type { Posto, Fazenda, NuntecMeasurement, NuntecReservoir, NuntecAdmeasurement, NuntecConsumption } from '../types';
 import {
   Plus,
@@ -28,7 +29,7 @@ import { ptBR } from 'date-fns/locale';
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatsCard } from '../components/ui/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -43,6 +44,7 @@ function StationCard({
   measurement,
   reservoirData,
   latestAdmeasurement,
+  lastDrainageDate, // Prop added
   dailyAverage,
   loadingAutonomy,
   onEdit,
@@ -53,6 +55,7 @@ function StationCard({
   measurement?: NuntecMeasurement;
   reservoirData?: NuntecReservoir;
   latestAdmeasurement?: NuntecAdmeasurement;
+  lastDrainageDate?: string; // Type added
   dailyAverage?: number; // Consumo diário médio (litros)
   loadingAutonomy?: boolean;
   onEdit: (p: Posto) => void;
@@ -177,54 +180,82 @@ function StationCard({
                 </div>
               )}
 
-              {/* Footer Info: Percentage & Calibration (Minimalist Line) */}
-              <div className="flex justify-between items-center mt-2">
-                {/* Calibration Minimalist */}
-                {latestAdmeasurement ? (
-                  (() => {
-                    const days = differenceInHours(new Date(), parseISO(latestAdmeasurement['updated-at'])) / 24;
-                    const isExpired = days > 60;
+              {/* Footer Info: Percentage & Calibration & Drainage (Minimalist Line) */}
+              <div className="flex flex-col gap-1 mt-2">
+                <div className="flex justify-between items-center">
+                  {/* Calibration Minimalist */}
+                  {latestAdmeasurement ? (
+                    (() => {
+                      const days = differenceInHours(new Date(), parseISO(latestAdmeasurement['updated-at'])) / 24;
+                      const isExpired = days > 60;
 
-                    return (
-                      <div className="flex items-center gap-1.5" title={`Fator: ${latestAdmeasurement['pulse-factor']} | Dias: ${Math.round(days)}`}>
-                        <Scale size={10} className={isExpired ? 'text-red-500' : 'text-slate-400'} />
-                        <span className={`text-[10px] font-medium ${isExpired ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-                          {isExpired ? 'Aferição Vencida' : `Aferido em ${format(parseISO(latestAdmeasurement['updated-at']), "dd/MM/yy")}`}
+                      return (
+                        <div className="flex items-center gap-1.5" title={`Fator: ${latestAdmeasurement['pulse-factor']} | Dias: ${Math.round(days)}`}>
+                          <Scale size={10} className={isExpired ? 'text-red-500' : 'text-slate-400'} />
+                          <span className={`text-[10px] font-medium ${isExpired ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+                            {isExpired ? 'Aferição Vencida' : `Aferido em ${format(parseISO(latestAdmeasurement['updated-at']), "dd/MM/yy")}`}
+                          </span>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <span></span> // Spacer
+                  )}
+
+                  {reservoirData && reservoirData.capacity > 0 && (
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono gap-4">
+                      {/* Autonomy Display */}
+                      {loadingAutonomy ? (
+                        <span className="text-slate-400 animate-pulse italic">
+                          Calculando...
                         </span>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <span></span> // Spacer
-                )}
-
-                {reservoirData && reservoirData.capacity > 0 && (
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1 font-mono gap-4">
-                    {/* Autonomy Display */}
-                    {loadingAutonomy ? (
-                      <span className="text-slate-400 animate-pulse italic">
-                        Calculando...
-                      </span>
-                    ) : (
-                      dailyAverage && dailyAverage > 0 && (
-                        (() => {
+                      ) : (
+                        dailyAverage && dailyAverage > 0 && (
+                          (() => {
+                            const currentStock = reservoirData.stock ?? measurement.amount;
+                            const days = currentStock / dailyAverage;
+                            const isLow = days < 3;
+                            return (
+                              <span className={isLow ? 'text-amber-600 font-bold' : ''}>
+                                Autonomia: ~{Math.round(days)} dias
+                              </span>
+                            );
+                          })()
+                        )
+                      )}
+                      <span>
+                        {(() => {
                           const currentStock = reservoirData.stock ?? measurement.amount;
-                          const days = currentStock / dailyAverage;
-                          const isLow = days < 3;
-                          return (
-                            <span className={isLow ? 'text-amber-600 font-bold' : ''}>
-                              Autonomia: ~{Math.round(days)} dias
+                          return Math.round((currentStock / reservoirData.capacity) * 100);
+                        })()}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* DRAINAGE STATUS ROW - Only if configured to show */}
+                {(posto.exibir_na_drenagem !== false) && (
+                  <div className="flex items-center gap-1.5">
+                    {lastDrainageDate ? (
+                      (() => {
+                        const days = differenceInHours(new Date(), new Date(lastDrainageDate)) / 24;
+                        const isOverdue = days > 7;
+
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <Droplet size={10} className={isOverdue ? 'text-red-500' : 'text-sky-500'} />
+                            <span className={`text-[10px] font-medium ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
+                              {isOverdue ? `Drenagem Vencida (${Math.floor(days)}d)` : `Drenado em ${format(new Date(lastDrainageDate), "dd/MM")}`}
                             </span>
-                          );
-                        })()
-                      )
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Droplet size={10} className="text-red-500" />
+                        <span className="text-[10px] font-bold text-red-600">Sem Registro de Drenagem</span>
+                      </div>
                     )}
-                    <span>
-                      {(() => {
-                        const currentStock = reservoirData.stock ?? measurement.amount;
-                        return Math.round((currentStock / reservoirData.capacity) * 100);
-                      })()}%
-                    </span>
                   </div>
                 )}
               </div>
@@ -286,6 +317,9 @@ export function StationManagement() {
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // New State for Drainage Data
+  const [drainageData, setDrainageData] = useState<Record<string, string>>({}); // posto_id -> last_date
+
   // UI State
   const [viewType, setViewType] = useState<'FISICO' | 'VIRTUAL'>('FISICO');
   const [selectedFazenda, setSelectedFazenda] = useState<string>('all');
@@ -309,18 +343,28 @@ export function StationManagement() {
     setLoading(true);
     try {
       // 1. Load Essential Data First (Fast)
-      const [fetchedFazendas, fetchedPostos, fetchedMeasurements, fetchedStationData, fetchedAdmeasurements] = await Promise.all([
+      const [fetchedFazendas, fetchedPostos, fetchedMeasurements, fetchedStationData, fetchedAdmeasurements, fetchedDrainages] = await Promise.all([
         db.getFazendas(),
         fuelService.getPostos(),
         nuntecService.getStockMeasurements(),
         nuntecService.getStationsData(),
-        nuntecService.getAdmeasurements()
+        nuntecService.getAdmeasurements(),
+        drainageService.getLatestDrainagesByStation() // Added fetch
       ]);
       setFazendas(fetchedFazendas.filter((f) => f.ativo));
       setPostos(fetchedPostos);
       setMeasurements(fetchedMeasurements);
       setStationData(fetchedStationData);
       setAdmeasurements(fetchedAdmeasurements);
+
+      // Process Drainages
+      const drainExample: Record<string, string> = {};
+      fetchedDrainages.forEach(d => {
+        if (!drainExample[d.posto_id] || new Date(d.data_drenagem) > new Date(drainExample[d.posto_id])) {
+          drainExample[d.posto_id] = d.data_drenagem;
+        }
+      });
+      setDrainageData(drainExample);
 
       // 2. Page is usable now
       setLoading(false);
@@ -654,6 +698,7 @@ export function StationManagement() {
                 measurement={measurement}
                 reservoirData={reservoirData}
                 latestAdmeasurement={latestAdmeasurement}
+                lastDrainageDate={drainageData[posto.id]} // Prop Passed
                 dailyAverage={dailyAvg}
                 loadingAutonomy={autonomyLoading}
                 onEdit={handleEdit}

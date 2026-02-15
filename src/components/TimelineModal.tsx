@@ -11,7 +11,7 @@ interface TimelineModalProps {
 export function TimelineModal({ isOpen, onClose, onSave }: TimelineModalProps) {
     const [title, setTitle] = useState('');
     const [date, setDate] = useState('');
-    const [type, setType] = useState<TimelineEvent['type']>('GERAL');
+    const [type, setType] = useState<TimelineEvent['type']>('task');
     const [description, setDescription] = useState('');
 
     // Recurrence State
@@ -31,14 +31,14 @@ export function TimelineModal({ isOpen, onClose, onSave }: TimelineModalProps) {
 
             await onSave({
                 title,
-                date: new Date(date).toISOString(),
+                date: new Date(date),
                 type,
                 description
             }, recurrenceConfig);
 
             onClose();
             // Reset fields
-            setTitle(''); setDate(''); setType('GERAL'); setDescription('');
+            setTitle(''); setDate(''); setType('task'); setDescription('');
             setIsRecurring(false); setUntilDate('');
         } catch (err: any) {
             console.error(err);
@@ -89,9 +89,9 @@ export function TimelineModal({ isOpen, onClose, onSave }: TimelineModalProps) {
                                 value={type}
                                 onChange={e => setType(e.target.value as any)}
                             >
-                                <option value="GERAL">Geral</option>
-                                <option value="MANUTENCAO">Manutenção</option>
-                                <option value="FISCAL">Fiscal</option>
+                                <option value="task">Tarefa</option>
+                                <option value="meeting">Reunião</option>
+                                <option value="reminder">Lembrete</option>
                             </select>
                         </div>
                     </div>
@@ -164,7 +164,7 @@ export function TimelineModal({ isOpen, onClose, onSave }: TimelineModalProps) {
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

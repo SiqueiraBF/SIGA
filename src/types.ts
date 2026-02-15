@@ -6,7 +6,8 @@ export type Modulo =
   | 'gestao_combustivel'
   | 'gestao_postos'
   | 'abast_lancar'
-  | 'abast_conferir';
+  | 'abast_conferir'
+  | 'sys_admin';
 
 export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
 export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
@@ -40,6 +41,9 @@ export interface Usuario {
   telefone?: string;
   last_login?: string; // ISO Date of last authentication
   last_seen?: string; // ISO Date of last heartbeat
+  // Joined Fields
+  funcao?: { nome: string };
+  fazenda?: { nome: string };
 }
 
 export interface Fazenda {
@@ -87,6 +91,7 @@ export interface ItemSolicitacao {
   status_item: StatusItem;
   cod_reduzido_unisystem?: string;
   motivo_reprovacao?: string;
+  tipo_tratativa?: 'NOVO' | 'REATIVADO' | 'EXISTENTE' | 'CORRECAO';
 }
 
 export type AcaoLog = 'CRIAR' | 'EDITAR' | 'STATUS' | 'EXCLUIR' | 'ITEM_EXCLUIDO' | 'ITEM_ALTERADO';
@@ -120,6 +125,8 @@ export interface Posto {
   created_at?: string;
   nuntec_reservoir_id?: string; // ID do reservatório de DESTINO para monitorar no Nuntec
   tipo?: 'FISICO' | 'VIRTUAL'; // Classificação para monitoramento de medições
+  tanques_adicionais?: { id: string; nome: string }[] | null;
+  exibir_na_drenagem?: boolean;
 }
 
 export interface NuntecMeasurement {
@@ -234,4 +241,56 @@ export interface IntegrationConfig {
   sync_start_date?: string;
   is_active: boolean;
   base_url?: string;
+}
+
+// --- Módulo de Solicitação de Materiais (Estoque) ---
+
+export interface Material {
+  id: string;
+  name: string;
+  unisystem_code?: string;
+  group_name?: string;
+  sub_group?: string;
+  unit: string;
+  current_stock: number;
+  image_url?: string;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+  last_exit_date?: string;
+}
+
+export type StockRequestStatus = 'PENDING' | 'SEPARATING' | 'SEPARATED' | 'DELIVERED' | 'CANCELED';
+
+export interface StockRequest {
+  id: string;
+  friendly_id?: number; // Serial 1, 2, 3...
+  farm_id: string;
+  requester_id: string;
+  separator_id?: string;
+  status: StockRequestStatus | 'DRAFT';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+
+  // Joins
+  fazenda?: { nome: string };
+  usuario?: { nome: string; email?: string }; // Requester
+  separator?: { nome: string }; // Separator
+}
+
+export type StockItemStatus = 'PENDING' | 'CONFIRMED' | 'UNAVAILABLE';
+
+export interface StockRequestItem {
+  id: string;
+  request_id: string;
+  material_id: string;
+  quantity_requested: number;
+  quantity_separated?: number;
+  status: StockItemStatus;
+  notes?: string;
+  created_at: string;
+
+  // Joins
+  material?: Material;
 }

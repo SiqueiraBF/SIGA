@@ -10,13 +10,13 @@ interface FeedItemCardProps {
 }
 
 export const FeedItemCard = ({ item }: FeedItemCardProps) => {
-    const isFuel = item.type === 'FUEL_PENDING';
+    const isFuel = item.type === 'nuntec';
     const iconColor = isFuel ? 'text-amber-500 bg-amber-50' : 'text-blue-500 bg-blue-50';
     const Icon = isFuel ? Droplet : FileText;
 
-    const to = item.type === 'FUEL_PENDING'
+    const to = item.type === 'nuntec'
         ? `${item.link}?view=integration`
-        : item.link;
+        : (item.link || '#');
 
     return (
         <Link to={to} className="block group">
@@ -33,7 +33,7 @@ export const FeedItemCard = ({ item }: FeedItemCardProps) => {
                             {formatInSystemTime(item.timestamp, "HH:mm")}
                         </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 truncate">{item.subtitle}</p>
+                    <p className="text-xs text-slate-500 mt-1 truncate">{item.description}</p>
                     {item.priority === 'high' && (
                         <span className="inline-block mt-2 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
                             Urgente

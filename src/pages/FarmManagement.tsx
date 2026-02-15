@@ -8,7 +8,7 @@ import { AuditLogModal } from '../components/AuditLogModal';
 
 // UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatsCard } from '../components/ui/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';

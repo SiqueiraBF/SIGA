@@ -5,7 +5,7 @@ interface StatsCardProps {
   value: string | number;
   icon: LucideIcon;
   description?: React.ReactNode;
-  variant?: 'default' | 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'orange';
+  variant?: 'default' | 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'orange' | 'destructive' | 'warning';
   onClick?: () => void;
   className?: string;
 }
@@ -74,9 +74,27 @@ const variants = {
     subTextColor: 'text-orange-600',
     ring: 'ring-orange-200',
   },
+  destructive: {
+    bg: 'bg-gradient-to-br from-red-50 to-red-100',
+    border: 'border-red-200',
+    iconBg: 'bg-red-200',
+    iconColor: 'text-red-600',
+    textColor: 'text-red-700',
+    subTextColor: 'text-red-600',
+    ring: 'ring-red-200',
+  },
+  warning: {
+    bg: 'bg-gradient-to-br from-yellow-50 to-yellow-100',
+    border: 'border-yellow-200',
+    iconBg: 'bg-yellow-200',
+    iconColor: 'text-yellow-600',
+    textColor: 'text-yellow-700',
+    subTextColor: 'text-yellow-600',
+    ring: 'ring-yellow-200',
+  },
 };
 
-export function StatsCard({
+export default function StatsCard({
   title,
   value,
   icon: Icon,

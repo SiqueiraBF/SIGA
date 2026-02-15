@@ -1,4 +1,4 @@
-import { Abastecimento, Posto, NuntecTransfer, NuntecPointing, NuntecMeasurement, NuntecReservoir, NuntecAdmeasurement, NuntecConsumption } from '../types';
+import { Abastecimento, Posto, NuntecTransfer, NuntecPointing, NuntecMeasurement, NuntecReservoir, NuntecAdmeasurement, NuntecConsumption, Veiculo } from '../types';
 import { db } from './supabaseService';
 import { supabase } from '../lib/supabase';
 import { format, parseISO, subHours } from 'date-fns';
@@ -18,6 +18,333 @@ const operatorCache = new Map<string, string>();
  * Service to handle Nuntec API integration
  */
 export const nuntecService = {
+  /**
+    * Fetches and cross-references detailed audit data (Analysis vs Supplies).
+    * Logic moved to client-side to avoid serverless function complexity.
+    */
+  async getAuditData(): Promise<{ stats: any; data: any[] }> {
+    const config = await this.getConfig();
+    if (!config) return { stats: {}, data: [] };
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      // Fetch last 30 days by default (or configure)
+      const now = new Date();
+      const sinceDate = subHours(now, 30 * 24); // 30 days
+      const since = format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
+
+      // Fetch Analysis, Supplies, Companies, Internal Stations, Fuels, AND Suppliers
+      const [analysisRes, suppliesRes, companiesRes, internalStationsRes, fuelsRes, suppliersRes] = await Promise.all([
+        fetch(`${config.BASE_URL}/supply_weight_measurements.xml?created_at=${since}`, { headers }),
+        fetch(`${config.BASE_URL}/supplies.xml?created_at=${since}`, { headers }),
+        fetch(`${config.BASE_URL}/companies.xml`, { headers }), // Fetch companies for mapping
+        supabase.from('postos').select('id, nome, nuntec_reservoir_id, fazenda:fazendas(nome)').not('nuntec_reservoir_id', 'is', null), // Fetch internal stations
+        fetch(`${config.BASE_URL}/fuels.xml`, { headers }), // Fetch Fuels
+        fetch(`${config.BASE_URL}/suppliers.xml`, { headers }) // Fetch Suppliers
+      ]);
+
+      if (!analysisRes.ok || !suppliesRes.ok) {
+        console.warn("Falha ao buscar dados da Nuntec para auditoria.");
+        return { stats: {}, data: [] };
+      }
+
+      const analysisText = await analysisRes.text();
+      const suppliesText = await suppliesRes.text();
+      const companiesText = await companiesRes.text();
+      const fuelsText = await fuelsRes.text();
+      const suppliersText = await suppliersRes.text();
+
+      // Map Internal Stations
+      const internalStationMap = new Map<string, { station: string, farm: string }>();
+      if (internalStationsRes.data) {
+        internalStationsRes.data.forEach((p: any) => {
+          if (p.nuntec_reservoir_id) {
+            internalStationMap.set(String(p.nuntec_reservoir_id), {
+              station: p.nome,
+              farm: p.fazenda?.nome || 'Fazenda Desconhecida'
+            });
+          }
+        });
+      }
+
+      if (analysisText.includes('<html') || suppliesText.includes('<html')) {
+        throw new Error("API retornou HTML (Provável erro de autenticação)");
+      }
+
+      const parser = new DOMParser();
+      const analysisDoc = parser.parseFromString(analysisText, 'text/xml');
+      const suppliesDoc = parser.parseFromString(suppliesText, 'text/xml');
+
+      // Helper to get Reservoir -> Station Name map (Nuntec Native)
+      const locationMap = await this.getReservoirLocationMap(headers, config);
+
+      // Helper: Parse Companies Map
+      const companiesMap = new Map<string, string>();
+      try {
+        const compDoc = parser.parseFromString(companiesText, 'text/xml');
+        const compNodes = compDoc.getElementsByTagName('company');
+        for (let i = 0; i < compNodes.length; i++) {
+          const id = getTagValue(compNodes[i], 'id');
+          const name = getTagValue(compNodes[i], 'name');
+          if (id && name) companiesMap.set(id, name);
+        }
+      } catch (e) { console.warn("Failed to parse companies", e); }
+
+      // Helper: Parse Fuels Map
+      const fuelsMap = new Map<string, string>();
+      // Manual Fallbacks (Requested by User)
+      fuelsMap.set('2', 'Óleo Diesel');
+      fuelsMap.set('4', 'Gasolina Comum');
+      fuelsMap.set('5', 'Querosene');
+      fuelsMap.set('6', 'AVGAS');
+
+      try {
+        const fuelDoc = parser.parseFromString(fuelsText, 'text/xml');
+        const fuelNodes = fuelDoc.getElementsByTagName('fuel');
+        for (let i = 0; i < fuelNodes.length; i++) {
+          const id = getTagValue(fuelNodes[i], 'id');
+          const name = getTagValue(fuelNodes[i], 'name');
+          if (id && name) fuelsMap.set(id, name); // API overwrites manual if available
+        }
+      } catch (e) { console.warn("Failed to parse fuels", e); }
+
+      // Helper: Parse Suppliers Map
+      const suppliersMap = new Map<string, string>();
+      try {
+        const supDoc = parser.parseFromString(suppliersText, 'text/xml');
+        let supNodes = supDoc.getElementsByTagName('supplier');
+        for (let i = 0; i < supNodes.length; i++) {
+          const id = getTagValue(supNodes[i], 'id');
+          const name = getTagValue(supNodes[i], 'name');
+          if (id && name) suppliersMap.set(id, name);
+        }
+      } catch (e) { console.warn("Failed to parse suppliers", e); }
+
+
+      // --- 1. Parse Measurements (Analysis) ---
+      const measurements = [];
+      const mNodes = analysisDoc.getElementsByTagName('supply-weight-measurement');
+
+      for (let i = 0; i < mNodes.length; i++) {
+        const node = mNodes[i];
+
+        // Extended Fields Parsing
+        // Extended Fields Parsing
+        const rawWeight = parseFloat(getTagValue(node, 'raw-total-weight') || '0');
+        const tare = parseFloat(getTagValue(node, 'tare') || '0');
+        const netWeight = rawWeight - tare; // Calculated
+        const supplierId = getTagValue(node, 'supplier-id');
+        const fuelId = getTagValue(node, 'fuel-id'); // Extract Fuel ID
+
+        // Prioritize Suppliers Map, then Companies Map, then ID
+        const supplierName = supplierId ? (suppliersMap.get(supplierId) || companiesMap.get(supplierId) || `Fornecedor ${supplierId}`) : undefined;
+        // Map Fuel Name
+        const fuelName = fuelId ? (fuelsMap.get(fuelId) || `Combustível ${fuelId}`) : undefined;
+
+        const density20c = parseFloat(getTagValue(node, 'normalized-density') || '0');
+        const currentDensity = parseFloat(getTagValue(node, 'current-density') || '0');
+        const ticket = getTagValue(node, 'ticket-number');
+
+        // Volume Calculations
+        // Volume @ 20C = NetWeight / Density20C
+        const vol20c = (netWeight > 0 && density20c > 0) ? (netWeight / density20c) : 0;
+
+        // Volume @ Ambient (Current) - Usually 'amount' is this, but we can verify/recalc
+        // Volume Current = NetWeight / CurrentDensity
+        // We will use the calculated one if densities are available, otherwise fallback to 'amount'
+        let volAmbient = parseFloat(getTagValue(node, 'amount') || '0');
+        if (netWeight > 0 && currentDensity > 0) {
+          volAmbient = netWeight / currentDensity;
+        }
+
+        measurements.push({
+          id: getTagValue(node, 'id'),
+          invoiceNumber: getTagValue(node, 'invoice-number'),
+          date: getTagValue(node, 'weighed-at') || getTagValue(node, 'created-at'),
+          density: parseFloat(getTagValue(node, 'current-density') || '0'), // Current Density for global display
+          temperature: parseFloat(getTagValue(node, 'current-temperature') || '0'),
+          volume: volAmbient, // Use calculated ambient volume
+          weight: rawWeight,
+          xmlDifference: getTagValue(node, 'difference'),
+          // New Fields
+          supplier_name: supplierName,
+          fuel_name: fuelName, // Added Fuel Name
+          gross_weight: rawWeight,
+          tare: tare,
+          net_weight: netWeight,
+          ticket_number: ticket,
+          density_20c: density20c,
+          volume_20c: vol20c
+        });
+      }
+
+      // Inline Helper
+      function getTagValue(parent: Element, tag: string): string | null {
+        const elements = parent.getElementsByTagName(tag);
+        if (elements && elements.length > 0) {
+          return elements[0].textContent;
+        }
+        return null;
+      }
+
+      // Index by Invoice Number for O(1) lookup
+      const analysisMap = new Map();
+      measurements.forEach(m => {
+        if (m.invoiceNumber) analysisMap.set(m.invoiceNumber.trim(), m);
+      });
+
+      // --- 2. Parse Supplies (Invoices) ---
+      const sNodes = suppliesDoc.getElementsByTagName('supply');
+
+      const auditResults = [];
+
+      let totalVolume = 0;
+      let totalDiff = 0;
+      let linkedCount = 0;
+
+      for (let i = 0; i < sNodes.length; i++) {
+        const node = sNodes[i];
+        const invoiceNum = getTagValue(node, 'invoice-number')?.trim();
+        // Fallbacks for Volume, Date, Unit
+        const volume = parseFloat(getTagValue(node, 'volume') || getTagValue(node, 'amount') || '0');
+        const dateStr = getTagValue(node, 'issued-at') || getTagValue(node, 'date') || getTagValue(node, 'created-at');
+
+        // Resolve Unit Name: STRICTLY Internal Mapping (Monitored Stations Only)
+        // User Request: "Auditoria trazer apenas as entradas dos postos monitorados"
+
+        const reservoirId = getTagValue(node, 'reservoir-id') || getTagValue(node, 'destination-id');
+
+        // If not mapped internally, SKIP entirely
+        if (!reservoirId || !internalStationMap.has(reservoirId)) {
+          continue;
+        }
+
+        const internalData = internalStationMap.get(reservoirId)!;
+        const stationName = internalData.station;
+        const farmName = internalData.farm;
+        const unitName = `${farmName} - ${stationName}`;
+
+        // Extract Fuel from Supply node if possible
+        const fuelId = getTagValue(node, 'fuel-id');
+        let fuelName = fuelId ? (fuelsMap.get(fuelId) || `Combustível ${fuelId}`) : undefined;
+
+        if (!invoiceNum) continue;
+
+        const match = analysisMap.get(invoiceNum);
+        if (match) {
+          linkedCount++;
+          // If match has fuel_name (from analysis), prefer that or ensure consistency
+          if (match.fuel_name) fuelName = match.fuel_name;
+        }
+
+        let diff = 0;
+        let diffPercent = 0;
+        let conformity = 'unknown';
+        let status = 'MISSING_ANALYSIS';
+
+        if (match) {
+          status = 'ANALYZED';
+          // Calculate physical volume from the analysis data
+          // PRIORITIZE Volume @ 20C (ANP Standard) if available, otherwise Ambient
+          const physicalVolume = (match.volume_20c && match.volume_20c > 0) ? match.volume_20c : match.volume;
+
+          // Recalculate diff relative to THIS supply invoice volume
+          // (Physical - Invoice)
+          diff = physicalVolume - volume;
+          diffPercent = volume > 0 ? (Math.abs(diff) / volume) * 100 : 0;
+
+          // Conformity Checks
+          // Tolerance: 0.5% (example)
+          conformity = diffPercent > 0.5 ? 'non_conforming' : 'conforming';
+          // Check Density 20C (Nornalized) for Quality compliance (0.8 ~ 0.9)
+          const d20 = match.density_20c;
+          if (d20 < 0.8 || d20 > 0.9) conformity = 'non_conforming';
+        }
+
+        totalVolume += volume;
+        if (match) totalDiff += diff;
+
+        auditResults.push({
+          id: getTagValue(node, 'id'),
+          invoiceNumber: invoiceNum,
+          date: dateStr,
+          volume: volume,
+          unit_id: unitName,
+          station_name: stationName,
+          farm_name: farmName,
+          fuel_name: fuelName, // Added Fuel Name
+          status: status,
+          conformity: conformity,
+          difference: diff,
+          differencePercent: diffPercent,
+          analysis: match
+        });
+      }
+
+      return {
+        stats: {
+          totalVolume,
+          totalDifference: totalDiff,
+          analysisCoverage: auditResults.length > 0 ? (linkedCount / auditResults.length) * 100 : 0,
+          totalAnalyzed: linkedCount,
+          totalCount: auditResults.length
+        },
+        data: auditResults.sort((a, b) => {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return dateB - dateA;
+        })
+      };
+
+    } catch (error) {
+      console.error("Erro na Auditoria (Client-Side):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Helper to map Reservoir IDs to Station Names
+   */
+  async getReservoirLocationMap(headers: Headers, config: any): Promise<Map<string, string>> {
+    try {
+      console.log("DEBUG: Fetching Station Map for Location...");
+      const response = await fetch(`${config.BASE_URL}/stations.xml`, { headers });
+      if (!response.ok) {
+        console.warn("DEBUG: Failed to fetch stations.xml", response.status);
+        return new Map();
+      }
+
+      const xmlText = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText, 'text/xml');
+
+      const map = new Map<string, string>();
+      const stations = doc.getElementsByTagName('station');
+
+      for (let i = 0; i < stations.length; i++) {
+        const station = stations[i];
+        const stationName = getTagValue(station, 'name') || `Estação ${getTagValue(station, 'id')}`;
+
+        const reservoirs = station.getElementsByTagName('reservoir');
+        for (let j = 0; j < reservoirs.length; j++) {
+          const resId = getTagValue(reservoirs[j], 'id');
+          if (resId) {
+            map.set(resId, stationName);
+          }
+        }
+      }
+      console.log("DEBUG: Station Map Loaded. Size:", map.size);
+      return map;
+
+    } catch (e) {
+      console.warn("Failed to load stations for location mapping", e);
+      return new Map();
+    }
+  },
+
+
   /**
     * Fetches stock measurements from Nuntec API.
     * Returns the raw list of measurements from the last 72h (or configured window).
@@ -349,6 +676,77 @@ export const nuntecService = {
     }
     // Fallback to legacy defaults if no config found in DB
     return DEFAULTS;
+  },
+
+  /**
+   * Fetches all vehicles from Nuntec API.
+   * Used to sync fleet data (IDs and Names).
+   */
+  async getVehicles(): Promise<Veiculo[]> {
+    const config = await this.getConfig();
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      const response = await fetch(`${config.BASE_URL}/vehicles.xml`, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        console.warn('Nuntec API (Vehicles) request failed.');
+        return [];
+      }
+
+      const xmlText = await response.text();
+      // Check for HTML response
+      if (xmlText.includes('<html') || xmlText.includes('<!DOCTYPE html>')) {
+        throw new Error('API returned HTML (Login Redirect)');
+      }
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      // User snippet shows <vehicle-module>, but standard API is <vehicle> list.
+      // We will look for both to be robust.
+      let nodes = xmlDoc.getElementsByTagName('vehicle');
+      if (nodes.length === 0) {
+        nodes = xmlDoc.getElementsByTagName('vehicle-module');
+      }
+
+      const vehicles: Veiculo[] = [];
+
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+
+        // ID Extraction
+        // Try direct <id> or <vehicle-id>
+        const id = getTagValue(node, 'id') || getTagValue(node, 'vehicle-id');
+
+        // Name Extraction
+        // Try <name>, <identification>, or fallback
+        const name = getTagValue(node, 'name') || getTagValue(node, 'identification') || `Veículo ${id}`;
+
+        // Active Status
+        // Default to true if missing
+        const activeText = getTagValue(node, 'active') || getTagValue(node, 'status');
+        const active = activeText !== 'false' && activeText !== 'inactive' && activeText !== '0';
+
+        if (id) {
+          vehicles.push({
+            id,
+            identificacao: name.trim(),
+            ativo: active
+          });
+        }
+      }
+
+      return vehicles;
+    } catch (error) {
+      console.error('Error fetching Nuntec Vehicles:', error);
+      return [];
+    }
   },
 
   /**
@@ -908,8 +1306,14 @@ function parseTransferNode(node: Element): NuntecTransfer | null {
 }
 
 function getTagValue(parent: Element, tag: string): string | null {
-  for (let i = 0; i < parent.children.length; i++) {
-    if (parent.children[i].tagName === tag) return parent.children[i].textContent;
+  // Try to find the tag as a descendant
+  const elements = parent.getElementsByTagName(tag);
+  if (elements && elements.length > 0) {
+    return elements[0].textContent;
   }
+
+  // Strict child check fallback (rarely needed if getElementsByTagName works, but kept for safety/logic match)
+  // Actually, getElementsByTagName is sufficient for 'first occurrence'.
+
   return null;
 }

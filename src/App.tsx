@@ -49,6 +49,33 @@ const AuditReceipt = lazy(() =>
 const CleaningList = lazy(() =>
   import('./pages/CleaningList').then((module) => ({ default: module.CleaningList })),
 );
+const FuelingConsistency = lazy(() =>
+  import('./pages/FuelingConsistency').then((module) => ({ default: module.FuelingConsistency })),
+);
+const GoodsReceiptManager = lazy(() =>
+  import('./pages/GoodsReceiptManager').then((module) => ({ default: module.GoodsReceiptManager })),
+);
+const MobileLayout = lazy(() =>
+  import('./components/layout/MobileLayout').then((module) => ({ default: module.MobileLayout })),
+);
+const MobileHome = lazy(() =>
+  import('./pages/mobile/MobileHome').then((module) => ({ default: module.MobileHome })),
+);
+const MobileDrainage = lazy(() =>
+  import('./pages/mobile/MobileDrainage').then((module) => ({ default: module.MobileDrainage })),
+);
+const MobileCleaning = lazy(() =>
+  import('./pages/mobile/MobileCleaning').then((module) => ({ default: module.MobileCleaning })),
+);
+const MobileGoodsReceipt = lazy(() =>
+  import('./pages/mobile/MobileGoodsReceipt').then((module) => ({ default: module.MobileGoodsReceipt })),
+);
+const MobileGoodsExit = lazy(() =>
+  import('./pages/mobile/MobileGoodsExit').then((module) => ({ default: module.MobileGoodsExit })),
+);
+const MobileStockSeparation = lazy(() =>
+  import('./pages/mobile/MobileStockSeparation').then((module) => ({ default: module.MobileStockSeparation })),
+);
 
 
 
@@ -58,6 +85,18 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (isLoading) return <FullScreenLoading message="Autenticando..." />;
   if (!user) return <Navigate to="/login" replace />;
+
+  return <>{children}</>;
+}
+
+// Mobile Redirector Component
+function DeviceRedirect({ children }: { children: ReactNode }) {
+  // If window is mobile sized (tailwinds md breakpoint is 768px)
+  const isMobile = window.innerWidth < 768;
+
+  if (isMobile) {
+    return <Navigate to="/app" replace />;
+  }
 
   return <>{children}</>;
 }
@@ -88,7 +127,9 @@ const router = createBrowserRouter([
         index: true,
         element: (
           <Suspense fallback={<FullScreenLoading />}>
-            <HomeDashboard />
+            <DeviceRedirect>
+              <HomeDashboard />
+            </DeviceRedirect>
           </Suspense>
         ),
       },
@@ -206,6 +247,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'auditoria-medicoes',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <FuelingConsistency />
+          </Suspense>
+        ),
+      },
+      {
         path: 'limpeza',
         element: (
           <Suspense fallback={<FullScreenLoading />}>
@@ -214,10 +263,78 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'recebimento',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <GoodsReceiptManager />
+          </Suspense>
+        ),
+      },
+      {
         path: 'configuracoes',
         element: <div className="p-8">Configurações (Em Breve)</div>,
       },
     ],
+  },
+  {
+    path: '/app',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<FullScreenLoading />}>
+          <MobileLayout />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileHome />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'drenagem',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileDrainage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'limpeza',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileCleaning />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'recebimento',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileGoodsReceipt />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'saida',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileGoodsExit />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'separacao',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <MobileStockSeparation />
+          </Suspense>
+        ),
+      }
+    ]
   },
   {
     path: '*',

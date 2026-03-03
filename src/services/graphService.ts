@@ -1,9 +1,9 @@
 
 // Configuração do Azure AD
 const AZURE_CONFIG = {
-    tenantId: import.meta.env.VITE_AZURE_TENANT_ID || '',
-    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || '',
-    clientSecret: import.meta.env.VITE_AZURE_CLIENT_SECRET || '', // CUIDADO: Em produção, usar variáveis de ambiente
+    tenantId: (import.meta as any).env.VITE_AZURE_TENANT_ID || '',
+    clientId: (import.meta as any).env.VITE_AZURE_CLIENT_ID || '',
+    clientSecret: (import.meta as any).env.VITE_AZURE_CLIENT_SECRET || '', // CUIDADO: Em produção, usar variáveis de ambiente
     scope: 'https://graph.microsoft.com/.default'
 };
 

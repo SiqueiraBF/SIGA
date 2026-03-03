@@ -13,3 +13,21 @@
 .recharts-wrapper *:focus {
   outline: none !important;
 }
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-400/30 rounded-full hover:bg-slate-400/50 transition-colors;
+}
+
+/* Darker scrollbar for dark backgrounds (like sidebar) if needed, 
+   but transparent track + slate thumb usually works well on both. 
+   Let's refine for sidebar specifically if generic isn't enough. 
+   For now, a subtle slate thumb is good. */

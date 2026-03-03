@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePresence } from '../context/PresenceContext';
-import { db } from '../services/supabaseService';
+import { db, roleService } from '../services/supabaseService';
 import type { Usuario, Funcao, Fazenda } from '../types';
 import {
   Users,
@@ -114,15 +114,9 @@ export function UserManagement() {
       setUsers(usersList);
       setFazendas(allFarms);
 
-      // Extract unique roles from the already joined data to populate filter dropdown
-      // This eliminates the need to fetch each role individually by ID
-      const rolesMap = new Map();
-      usersList.forEach(u => {
-        if (u.funcao_id && u.funcao) {
-          rolesMap.set(u.funcao_id, { id: u.funcao_id, nome: u.funcao.nome });
-        }
-      });
-      setFuncoes(Array.from(rolesMap.values()));
+      // Use roleService to fetch all available roles for the filter
+      const allRoles = await roleService.getAll();
+      setFuncoes(allRoles);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {

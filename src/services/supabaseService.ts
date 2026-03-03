@@ -316,6 +316,16 @@ export const db = {
     return data || [];
   },
 
+  async getAllPostosDetailed() {
+    const { data, error } = await supabase
+      .from('postos')
+      .select('id, nome, fazenda_id, nuntec_reservoir_id, ativo')
+      .order('nome');
+
+    if (error) throw error;
+    return data || [];
+  },
+
   // Users
   async getAllUsers(): Promise<any[]> {
     const { data, error } = await supabase

@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { utils, read } from 'xlsx';
-import { Upload, FileSpreadsheet, Save, Image as ImageIcon, Search, Boxes, ArrowLeft, X } from 'lucide-react';
+import { Upload, FileSpreadsheet, Save, Image as ImageIcon, Search, Boxes, ArrowLeft, X, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { stockService } from '../services/stockService';
 import { StockHistoryModal } from '../components/StockHistoryModal';
+import { TableSkeleton } from '../components/ui/TableSkeleton';
 import type { Material } from '../types';
 // import { format } from 'date-fns'; // Unused in this version
 // import { supabase } from '../lib/supabase'; // Unused direct usage
+import { useAuth } from '../context/AuthContext';
 
 interface ImportItem {
     code: string;
@@ -24,6 +26,8 @@ interface ImportItem {
 export function StockImport() {
     const queryClient = useQueryClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { hasPermission, checkAccess } = useAuth();
+    const canEdit = checkAccess({ module: 'gestao_estoque', action: 'edit' });
 
     // View State: 'LIST' or 'IMPORT'
     const [viewMode, setViewMode] = useState<'LIST' | 'IMPORT'>('LIST');
@@ -213,12 +217,24 @@ export function StockImport() {
         }
     };
 
+    if (!hasPermission('gestao_estoque')) {
+        return (
+            <div className="p-8 text-center max-w-7xl mx-auto">
+                <div className="max-w-md mx-auto bg-red-50 border border-red-200 rounded-xl p-8 shadow-sm">
+                    <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-red-800 mb-2">Acesso Restrito</h2>
+                    <p className="text-red-600">Você não tem permissão para visualizar a Gestão de Estoque. Contate um administrador.</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-7xl mx-auto pb-20 space-y-6">
             <PageHeader
                 title={viewMode === 'LIST' ? "Gestão de Estoque" : "Importação de Estoque"}
                 subtitle={viewMode === 'LIST' ? "Consulte e gerencie os materiais do sistema" : "Importe itens via Excel (Unisystem)"}
-                icon={viewMode === 'LIST' ? Boxes : FileSpreadsheet}
+                icon={FileSpreadsheet}
             >
                 {viewMode === 'LIST' ? (
                     <div className="flex items-center gap-4">
@@ -230,13 +246,15 @@ export function StockImport() {
                                     : '-'}
                             </span>
                         </div>
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={loading || processing}
-                            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md transition-colors"
-                        >
-                            <Upload size={20} /> Carregar Excel
-                        </button>
+                        {canEdit && (
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={loading || processing}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md transition-colors"
+                            >
+                                <Upload size={20} /> Carregar Excel
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <button
@@ -270,79 +288,85 @@ export function StockImport() {
                         />
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        {loadingList ? (
-                            <div className="text-center py-20 text-slate-400">Carregando catálogo...</div>
-                        ) : dbMaterials.length === 0 ? (
-                            <div className="text-center py-20 bg-slate-50">
-                                <Boxes size={48} className="mx-auto text-slate-300 mb-2" />
-                                <p className="text-slate-500 font-medium">Nenhum material cadastrado.</p>
-                                <p className="text-slate-400 text-sm">Clique em "Carregar Excel" para importar sua planilha.</p>
-                            </div>
-                        ) : (
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase">
-                                    <tr>
-                                        <th className="px-6 py-3 text-center">Foto</th>
-                                        <th className="px-6 py-3">Código</th>
-                                        <th className="px-6 py-3">Descrição</th>
-                                        <th className="px-6 py-3">Grupo</th>
-                                        <th className="px-6 py-3 text-center">Última Saída</th>
-                                        <th className="px-6 py-3 text-right">Estoque Atual</th>
-                                        <th className="px-6 py-3 text-center">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {dbMaterials.map((material) => (
-                                        <tr
-                                            key={material.id}
-                                            className="hover:bg-slate-50 transition-colors cursor-pointer"
-                                            onClick={(e) => {
-                                                // Ignore if clicked on specific action buttons or image
-                                                if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.cursor-zoom-in')) return;
-                                                setSelectedMaterialHistory(material);
-                                            }}
-                                        >
-                                            <td className="px-6 py-3 text-center">
-                                                <div className="flex justify-center">
-                                                    {material.image_url ? (
-                                                        <div
-                                                            className="w-10 h-10 rounded shrink-0 overflow-hidden border border-slate-100 shadow-sm cursor-zoom-in"
-                                                            onClick={() => setExpandedImage(material.image_url || null)}
-                                                        >
-                                                            <img src={material.image_url} className="w-full h-full object-cover" />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-300"><Boxes size={20} /></div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-3 font-mono text-slate-600">{material.unisystem_code}</td>
-                                            <td className="px-6 py-3 font-medium text-slate-800">{material.name}</td>
-                                            <td className="px-6 py-3 text-slate-500">
-                                                {material.group_name} <span className="text-xs text-slate-400">/ {material.sub_group}</span>
-                                            </td>
-                                            <td className="px-6 py-3 text-center text-xs text-slate-500">
-                                                {material.last_exit_date ? new Date(material.last_exit_date).toLocaleDateString('pt-BR') : '-'}
-                                            </td>
-                                            <td className="px-6 py-3 text-right font-bold text-slate-700">
-                                                {material.current_stock} <span className="text-[10px] font-normal text-slate-400">{material.unit}</span>
-                                            </td>
-                                            <td className="px-6 py-3 text-center">
-                                                <button
-                                                    onClick={() => setImageUploadItem({ id: material.id, name: material.name, code: material.unisystem_code || '' })}
-                                                    className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded transition-colors"
-                                                    title="Alterar Foto"
-                                                >
-                                                    <ImageIcon size={16} />
-                                                </button>
-                                            </td>
+                    {loadingList ? (
+                        <TableSkeleton rows={10} columns={7} showActions={true} />
+                    ) : (
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            {dbMaterials.length === 0 ? (
+                                <div className="text-center py-20 bg-slate-50">
+                                    <Boxes size={48} className="mx-auto text-slate-300 mb-2" />
+                                    <p className="text-slate-500 font-medium">Nenhum material cadastrado.</p>
+                                    {canEdit && <p className="text-slate-400 text-sm">Clique em "Carregar Excel" para importar sua planilha.</p>}
+                                </div>
+                            ) : (
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase">
+                                        <tr>
+                                            <th className="px-6 py-3 text-center">Foto</th>
+                                            <th className="px-6 py-3">Código</th>
+                                            <th className="px-6 py-3">Descrição</th>
+                                            <th className="px-6 py-3">Grupo</th>
+                                            <th className="px-6 py-3 text-center">Última Saída</th>
+                                            <th className="px-6 py-3 text-right">Estoque Atual</th>
+                                            <th className="px-6 py-3 text-center">Ações</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {dbMaterials.map((material) => (
+                                            <tr
+                                                key={material.id}
+                                                className="hover:bg-slate-50 transition-colors cursor-pointer"
+                                                onClick={(e) => {
+                                                    // Ignore if clicked on specific action buttons or image
+                                                    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.cursor-zoom-in')) return;
+                                                    setSelectedMaterialHistory(material);
+                                                }}
+                                            >
+                                                <td className="px-6 py-3 text-center">
+                                                    <div className="flex justify-center">
+                                                        {material.image_url ? (
+                                                            <div
+                                                                className="w-10 h-10 rounded shrink-0 overflow-hidden border border-slate-100 shadow-sm cursor-zoom-in"
+                                                                onClick={() => setExpandedImage(material.image_url || null)}
+                                                            >
+                                                                <img src={material.image_url} className="w-full h-full object-cover" />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-300"><Boxes size={20} /></div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-3 font-mono text-slate-600">{material.unisystem_code}</td>
+                                                <td className="px-6 py-3 font-medium text-slate-800">{material.name}</td>
+                                                <td className="px-6 py-3 text-slate-500">
+                                                    {material.group_name} <span className="text-xs text-slate-400">/ {material.sub_group}</span>
+                                                </td>
+                                                <td className="px-6 py-3 text-center text-xs text-slate-500">
+                                                    {material.last_exit_date ? new Date(material.last_exit_date).toLocaleDateString('pt-BR') : '-'}
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-bold text-slate-700">
+                                                    {material.current_stock} <span className="text-[10px] font-normal text-slate-400">{material.unit}</span>
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    {canEdit ? (
+                                                        <button
+                                                            onClick={() => setImageUploadItem({ id: material.id, name: material.name, code: material.unisystem_code || '' })}
+                                                            className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Alterar Foto"
+                                                        >
+                                                            <ImageIcon size={16} />
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-slate-300">-</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

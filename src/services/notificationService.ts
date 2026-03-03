@@ -1,4 +1,6 @@
 import { supabase } from '../lib/supabase';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export const notificationService = {
   /**
@@ -64,7 +66,7 @@ export const notificationService = {
             */
 
       console.group('🔔 NOTIFICAÇÃO AUTOMÁTICA (SIMULAÇÃO)');
-      console.log(`DE: Sistema SIGA`);
+      console.log(`DE: Sistema Nadiana`);
       console.log(`PARA: ${user.nome} (${cleanPhone})`);
       console.log(`MENSAGEM:\n${message}`);
       console.groupEnd();
@@ -96,7 +98,7 @@ export const notificationService = {
 
     // 2. Montar Mensagem
     const linhas = [
-      `*${isDevolucao ? '⚠️ Ação Necessária' : '✅ Notificação de Cadastro'} - Sistema SIGA*`,
+      `*${isDevolucao ? '⚠️ Ação Necessária' : '✅ Notificação de Cadastro'} - Sistema Nadiana*`,
       ``,
       `Prezada(o) *${request.solicitante_nome || 'Usuário'}*,`,
       isDevolucao
@@ -134,16 +136,214 @@ export const notificationService = {
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   },
 
-  /**
-   * Envia relatório de drenagem por e-mail via Edge Function
-   */
-  async sendDrainageReport(fazendaNome: string, entries: any[], senderEmail?: string, senderName?: string) {
+  async sendGoodsReceiptReport(receipt: any, senderEmail?: string) {
+    try {
+      const settings = await import('./systemService').then((m) =>
+        m.systemService.getParameters(['email_cd_to', 'email_cd_cc']),
+      );
+      const to =
+        settings['email_cd_to']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+      const cc =
+        settings['email_cd_cc']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+
+      if (to.length === 0) {
+        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para CD (email_cd_to).');
+        return false;
+      }
+
+      const dateStr = new Date(receipt.entry_at).toLocaleString('pt-BR');
+
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2 style="color: #2563eb;">Novo Recebimento de Mercadoria</h2>
+          
+          <div style="background-color: #eff6ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #bfdbfe;">
+            <p><strong>Fazenda Destino:</strong> ${receipt.destination_farm?.nome || 'Não informada'}</p>
+            <p><strong>Fornecedor:</strong> ${receipt.supplier}</p>
+            <p><strong>Nota Fiscal:</strong> ${receipt.invoice_number}</p>
+            ${receipt.order_number ? `<p><strong>Pedido:</strong> ${receipt.order_number}</p>` : ''}
+            <p><strong>Recebedor:</strong> ${receipt.receiver?.nome || 'Não informado'}</p>
+            <p><strong>Data de Entrada:</strong> ${dateStr}</p>
+          </div>
+
+          ${receipt.observation_entry
+          ? `
+          <p><strong>Observações:</strong><br/>
+            ${receipt.observation_entry}
+          </p>`
+          : ''
+        }
+
+          <br/>
+          <p style="font-size: 12px; color: #666;">
+            Enviado automaticamente pelo Sistema SIGA.
+          </p>
+        </div>
+      `;
+
+      const supabaseUrl = 'https://wufvpptcolbdbwdtcugv.supabase.co';
+      const supabaseAnonKey = 'sb_publishable_6n2wtcAyxEPPo6XZxeCDFg_mjnFoHNo';
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          to,
+          cc,
+          subject: `[Entrada CD] NF: ${receipt.invoice_number} - ${receipt.supplier}`,
+          html: htmlBody,
+          htmlBody: htmlBody,
+          fromEmail: senderEmail,
+        }),
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        console.error('[NOTIFICATION] Erro no envio de e-mail de recebimento:', result.error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('[NOTIFICATION] Erro ao processar e-mail de recebimento:', error);
+      return false;
+    }
+  },
+
+  async sendGoodsExitReport(exit: any, items: any[], senderEmail?: string) {
+    try {
+      const settings = await import('./systemService').then((m) =>
+        m.systemService.getParameters(['email_cd_to', 'email_cd_cc']),
+      );
+      const to =
+        settings['email_cd_to']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+      const cc =
+        settings['email_cd_cc']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+
+      if (to.length === 0) {
+        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para CD (email_cd_to).');
+        return false;
+      }
+
+      const dateStr = new Date(exit.exit_date).toLocaleString('pt-BR');
+
+      const itemsHtml = items
+        .map(
+          (item) => `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.invoice_number}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.supplier}</td>
+        </tr>
+      `,
+        )
+        .join('');
+
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2 style="color: #059669;">Nova Saída de Mercadoria (Expedição)</h2>
+          
+          <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #bbf7d0;">
+            <p><strong>Fazenda Destino:</strong> ${exit.destination_farm?.nome || 'Não informada'}</p>
+            <p><strong>Motorista / Portador:</strong> ${exit.driver_name}</p>
+            <p><strong>Data de Saída:</strong> ${dateStr}</p>
+            <p><strong>Registrado por:</strong> ${exit.creator?.nome || 'Sistema'}</p>
+          </div>
+
+          ${exit.observation
+          ? `
+          <p><strong>Observações:</strong><br/>
+            ${exit.observation}
+          </p>`
+          : ''
+        }
+
+          <h3>Notas Fiscais Despachadas (${items.length})</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
+            <thead style="background-color: #f8fafc;">
+              <tr>
+                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Nota Fiscal</th>
+                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Fornecedor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <br/>
+          <p style="font-size: 12px; color: #666;">
+            Enviado automaticamente pelo Sistema SIGA.
+          </p>
+        </div>
+      `;
+
+      const supabaseUrl = 'https://wufvpptcolbdbwdtcugv.supabase.co';
+      const supabaseAnonKey = 'sb_publishable_6n2wtcAyxEPPo6XZxeCDFg_mjnFoHNo';
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          to,
+          cc,
+          subject: `[Expedição CD] ${items.length} notas para ${exit.destination_farm?.nome}`,
+          html: htmlBody,
+          htmlBody: htmlBody,
+          fromEmail: senderEmail,
+        }),
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        console.error('[NOTIFICATION] Erro no envio de e-mail de saída:', result.error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('[NOTIFICATION] Erro ao processar e-mail de saída:', error);
+      return false;
+    }
+  },
+
+  async sendDrainageReport(
+    fazendaNome: string,
+    entries: any[],
+    senderEmail?: string,
+    senderName?: string,
+    fazendaId?: string
+  ) {
     try {
       // 1. Buscar configurações
-
-      const settings = await import('./systemService').then(m => m.systemService.getParameters(['email_drenagem_to', 'email_drenagem_cc']));
-      const to = settings['email_drenagem_to']?.split(',').map(e => e.trim()).filter(e => e) || [];
-      const cc = settings['email_drenagem_cc']?.split(',').map(e => e.trim()).filter(e => e) || [];
+      const settings = await import('./systemService').then((m) =>
+        m.systemService.getParameters(['email_drenagem_to', 'email_drenagem_cc']),
+      );
+      const to =
+        settings['email_drenagem_to']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+      const cc =
+        settings['email_drenagem_cc']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
 
       if (to.length === 0) {
         console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para drenagem.');
@@ -153,15 +353,20 @@ export const notificationService = {
       // 2. Montar HTML
       const dateStr = new Date().toLocaleDateString('pt-BR');
 
-      const rows = entries.map(item => `
+      const rows = entries
+        .map(
+          (item) => `
               <tr>
-                  <td style="padding: 8px; border: 1px solid #ddd;">${item.stationName} ${(item.tankName && item.tankName !== 'Tanque Principal') ? `- ${item.tankName}` : ''}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd;">${item.stationName} ${item.tankName && item.tankName !== 'Tanque Principal' ? `- ${item.tankName}` : ''
+            }</td>
                   <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${item.litros} L</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${item.aspecto}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${item.destino}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${item.observacoes || '-'}</td>
               </tr>
-          `).join('');
+          `,
+        )
+        .join('');
 
       const htmlBody = `
               <h2>Relatório de Drenagem de Postos - ${fazendaNome}</h2>
@@ -187,7 +392,7 @@ export const notificationService = {
           `;
 
       // 3. Processar Anexos (Fotos)
-      const attachments: { name: string; contentType: string; contentBytes: string; }[] = [];
+      const attachments: { name: string; contentType: string; contentBytes: string }[] = [];
 
       for (const entry of entries) {
         if (entry.photos && entry.photos.length > 0) {
@@ -195,22 +400,22 @@ export const notificationService = {
             const file = entry.photos[i];
             const arrayBuffer = await file.arrayBuffer();
             const base64String = btoa(
-              new Uint8Array(arrayBuffer)
-                .reduce((data, byte) => data + String.fromCharCode(byte), '')
+              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
             );
 
             // Nome único para o anexo: Posto_Tanque_N.jpg
             const safeStationName = entry.stationName.replace(/[^a-z0-9]/gi, '_');
-            const safeTankName = (entry.tankName && entry.tankName !== 'Tanque Principal')
-              ? `_${entry.tankName.replace(/[^a-z0-9]/gi, '_')}`
-              : '';
+            const safeTankName =
+              entry.tankName && entry.tankName !== 'Tanque Principal'
+                ? `_${entry.tankName.replace(/[^a-z0-9]/gi, '_')}`
+                : '';
             const ext = file.name.split('.').pop() || 'jpg';
             const fileName = `${safeStationName}${safeTankName}_${i + 1}.${ext}`;
 
             attachments.push({
               name: fileName,
               contentType: file.type,
-              contentBytes: base64String
+              contentBytes: base64String,
             });
           }
         }
@@ -224,7 +429,7 @@ export const notificationService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`
+          Authorization: `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
           to,
@@ -232,8 +437,8 @@ export const notificationService = {
           subject: `[Drenagem] Relatório ${fazendaNome} - ${dateStr}`,
           htmlBody,
           fromEmail: senderEmail,
-          attachments // Add attachments to payload
-        })
+          attachments, // Add attachments to payload
+        }),
       });
 
       const result = await response.json();
@@ -252,9 +457,19 @@ export const notificationService = {
   async sendStockRequestReport(request: any, items: any[], senderEmail?: string, senderName?: string) {
     try {
       // 1. Buscar configurações
-      const settings = await import('./systemService').then(m => m.systemService.getParameters(['email_estoque_to', 'email_estoque_cc']));
-      const to = settings['email_estoque_to']?.split(',').map(e => e.trim()).filter(e => e) || [];
-      const cc = settings['email_estoque_cc']?.split(',').map(e => e.trim()).filter(e => e) || [];
+      const settings = await import('./systemService').then((m) =>
+        m.systemService.getParameters(['email_estoque_to', 'email_estoque_cc']),
+      );
+      const to =
+        settings['email_estoque_to']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+      const cc =
+        settings['email_estoque_cc']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
 
       if (to.length === 0) {
         console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para estoque.');
@@ -266,146 +481,180 @@ export const notificationService = {
         cc.push(request.usuario.email);
       }
 
-      // 2. Montar Corpo do E-mail
-      const itemsHtml = items.map(item => `
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.material.unisystem_code || '-'}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>${item.material.name}</strong></td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity_separated} ${item.material.unit}</td>
-        </tr>
-      `).join('');
+      // 3. Gerar PDF
+      const doc = new jsPDF();
+
+      // Cabeçalho PDF
+      doc.setFontSize(14);
+      doc.text(`Solicitação: ${request.friendly_id || request.numero || request.id.slice(0, 8)}`, 14, 20);
+
+      doc.setFontSize(10);
+      doc.text('Origem: AGRONEGOCIOS - CAREGI', 14, 30);
+      doc.text(
+        `Destino: AGRONEGOCIOS - ${request.fazenda?.nome?.toUpperCase() || 'FAZENDA NÃO IDENTIFICADA'}`,
+        14,
+        38,
+      );
+
+      doc.setFontSize(10);
+      doc.setTextColor(150, 0, 0); // Texto em vermelho escuro para as ressalvas
+      doc.text('CONSIDERAR O ESTOQUE ALMOX MATRIZ AGRO PARA EPIS E UNIFORMES', 14, 48);
+      doc.text('e CONSIDERAR O ESTOQUE CANTINA CAREGI MATRIZ PARA ALIMENTOS', 14, 53);
+      doc.setTextColor(0, 0, 0); // Resetar para preto
+
+      // Tabela no PDF
+      const tableData = items.map((item) => [
+        item.material.unisystem_code || '-',
+        item.material.name || '-',
+        `${item.quantity_separated} ${item.material.unit}`,
+      ]);
+
+      autoTable(doc, {
+        startY: 60,
+        head: [['Cód', 'Descrição', 'Qtd Separada']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [41, 128, 185] }, // Azul estilo padrão do autoTable
+      });
+
+      // Converter as string em Base64
+      const pdfArrayBuffer = doc.output('arraybuffer');
+      const pdfBase64 = btoa(
+        new Uint8Array(pdfArrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+      );
+
+      const attachments = [
+        {
+          name: `Relatorio_Separacao_Req_${request.friendly_id || request.id.slice(0, 8)}.pdf`,
+          contentType: 'application/pdf',
+          contentBytes: pdfBase64,
+        },
+      ];
+
+      // 4. Enviar via Edge Function
+      const supabaseUrl = 'https://wufvpptcolbdbwdtcugv.supabase.co';
+      const supabaseAnonKey = 'sb_publishable_6n2wtcAyxEPPo6XZxeCDFg_mjnFoHNo';
 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #2563eb;">Solicitação de Transferência #${request.friendly_id || request.numero || request.id.slice(0, 8)}</h2>
+          <h2 style="color: #2563eb;">Solicitação de Transferência #${request.friendly_id || request.numero || request.id.slice(0, 8)
+        }</h2>
           
           <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <p><strong>Origem:</strong> AGRONEGOCIOS - CAREGI</p>
-            <p><strong>Destino:</strong> AGRONEGOCIOS - ${request.fazenda?.nome?.toUpperCase() || 'FAZENDA NÃO IDENTIFICADA'}</p>
+            <p><strong>Destino:</strong> AGRONEGOCIOS - ${request.fazenda?.nome?.toUpperCase() || 'FAZENDA NÃO IDENTIFICADA'
+        }</p>
           </div>
 
-          <div style="background-color: #fef2f2; color: #991b1b; padding: 10px; border-radius: 4px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 1px solid #fecaca;">
-            CONSIDERAR O ESTOQUE ALMOX MATRIZ AGRO
-          </div>
-
-          <h3>Itens Separados</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <thead style="background-color: #f1f5f9;">
-              <tr>
-                <th style="padding: 10px; text-align: left;">Cód.</th>
-                <th style="padding: 10px; text-align: left;">Descrição</th>
-                <th style="padding: 10px; text-align: center;">Qtd. Separada</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
+          <p>O relatório de separação de mercadorias está em anexo neste e-mail (PDF).</p>
           <p style="margin-top: 30px; font-size: 12px; color: #666;">
             Enviado automaticamente pelo Sistema SIGA.
           </p>
         </div>
       `;
 
-      // 3. Enviar via Edge Function
-      const supabaseUrl = 'https://wufvpptcolbdbwdtcugv.supabase.co';
-      const supabaseAnonKey = 'sb_publishable_6n2wtcAyxEPPo6XZxeCDFg_mjnFoHNo';
-
-      const { data, error } = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`
+          Authorization: `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
           to,
           cc,
-          subject: `[Transferência] Solicitação #${request.friendly_id || request.id.slice(0, 8)} - ${request.fazenda?.nome}`,
+          subject: `[Transferência] Solicitação #${request.friendly_id || request.id.slice(0, 8)} - ${request.fazenda?.nome
+            }`,
           html: htmlBody,
           htmlBody: htmlBody,
-          fromEmail: senderEmail // Revertendo para o email do usuário real para evitar erro de validação
-        })
-      }).then(res => res.json().then(d => ({ data: d.success ? d : null, error: d.success ? null : d.error })));
+          fromEmail: senderEmail,
+          attachments,
+        }),
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+      if (!result.success) {
+        console.error('[NOTIFICATION] Erro no envio de e-mail:', result.error);
+        return false;
+      }
       return true;
-
     } catch (err) {
       console.error('Erro ao enviar solicitação de estoque:', err);
-      throw err;
+      return false;
     }
   },
 
   async sendCleaningReport(
-    data: {
-      fazendaNome: string;
-      usuarioNome: string;
-      tipo: 'ALMOXARIFADO' | 'POSTO';
-      data: string;
-      observacoes?: string
-    },
-    photos: File[],
-    senderEmail?: string
+    fazendaNome: string,
+    tipo: 'ALMOXARIFADO' | 'POSTO',
+    usuarioNome: string,
+    observacoes: string | undefined,
+    fotosUrl: string[],
+    fazendaId: string,
+    senderEmail: string | undefined,
+    photos: File[]
   ) {
     try {
       // 1. Configurações
-      // Reusing drainage emails for now or a new setting? 
-      // Implementation plan didn't specify new settings, so let's use a generic 'email_limpeza_to' if exists, or fallback to drainage/admin.
-      // Let's assume we need to fetch 'email_limpeza_to', 'email_limpeza_cc'.
-
-      const settings = await import('./systemService').then(m => m.systemService.getParameters(['email_limpeza_to', 'email_limpeza_cc']));
-      const to = settings['email_limpeza_to']?.split(',').map(e => e.trim()).filter(e => e) || [];
-      const cc = settings['email_limpeza_cc']?.split(',').map(e => e.trim()).filter(e => e) || [];
+      const settings = await import('./systemService').then((m) =>
+        m.systemService.getParameters(['email_limpeza_to', 'email_limpeza_cc']),
+      );
+      const to =
+        settings['email_limpeza_to']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
+      const cc =
+        settings['email_limpeza_cc']
+          ?.split(',')
+          .map((e) => e.trim())
+          .filter((e) => e) || [];
 
       if (to.length === 0) {
         console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para limpeza (email_limpeza_to).');
-        // Fallback to avoid silent failure if user hasn't configured it yet? 
-        // Better to log error and return false so UI can warn.
         return false;
       }
 
       // 2. HTML Body
-      const dateStr = new Date(data.data + 'T12:00:00').toLocaleDateString('pt-BR'); // Fix timezone offset for display
+      const dateStr = new Date().toLocaleDateString('pt-BR'); // Fix timezone offset for display
 
       const htmlBody = `
-              <div style="font-family: Arial, sans-serif; color: #333;">
-                  <h2 style="color: #059669;">Registro de Limpeza e Organização</h2>
-                  
-                  <div style="background-color: #ecfdf5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d1fae5;">
-                      <p><strong>Fazenda:</strong> ${data.fazendaNome}</p>
-                      <p><strong>Setor:</strong> ${data.tipo}</p>
-                      <p><strong>Responsável:</strong> ${data.usuarioNome}</p>
-                      <p><strong>Data de Referência:</strong> ${dateStr}</p>
-                  </div>
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2 style="color: #059669;">Registro de Limpeza e Organização</h2>
 
-                  <p><strong>Observações:</strong><br/>
-                  ${data.observacoes || 'Nenhuma observação registrada.'}</p>
+          <div style="background-color: #ecfdf5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d1fae5;">
+            <p><strong>Fazenda:</strong> ${fazendaNome}</p>
+            <p><strong>Setor:</strong> ${tipo}</p>
+            <p><strong>Responsável:</strong> ${usuarioNome}</p>
+            <p><strong>Data de Referência:</strong> ${dateStr}</p>
+          </div>
 
-                  <br/>
-                  <p style="font-size: 12px; color: #666;">
-                    * As fotos do registro seguem em anexo.<br/>
-                    Enviado automaticamente pelo Sistema SIGA.
-                  </p>
-              </div>
-          `;
+          <p><strong>Observações:</strong><br/>
+            ${observacoes || 'Nenhuma observação registrada.'}
+          </p>
+
+          <br/>
+          <p style="font-size: 12px; color: #666;">
+            * As fotos do registro seguem em anexo.<br/>
+            Enviado automaticamente pelo Sistema SIGA.
+          </p>
+        </div>
+      `;
 
       // 3. Attachments (Photos)
-      const attachments: { name: string; contentType: string; contentBytes: string; }[] = [];
+      const attachments: { name: string; contentType: string; contentBytes: string }[] = [];
 
       for (let i = 0; i < photos.length; i++) {
         const file = photos[i];
         const arrayBuffer = await file.arrayBuffer();
         const base64String = btoa(
-          new Uint8Array(arrayBuffer)
-            .reduce((d, byte) => d + String.fromCharCode(byte), '')
+          new Uint8Array(arrayBuffer).reduce((d, byte) => d + String.fromCharCode(byte), ''),
         );
 
         const ext = file.name.split('.').pop() || 'jpg';
         attachments.push({
-          name: `Foto_${i + 1}_${data.tipo}.${ext}`,
+          name: `Foto_${i + 1}_${tipo}.${ext}`,
           contentType: file.type,
-          contentBytes: base64String
+          contentBytes: base64String,
         });
       }
 
@@ -417,16 +666,16 @@ export const notificationService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`
+          Authorization: `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
           to,
           cc,
-          subject: `[Limpeza] ${data.tipo} - ${data.fazendaNome} - ${dateStr}`,
+          subject: `[Limpeza] ${tipo} - ${fazendaNome} - ${dateStr}`,
           htmlBody,
           fromEmail: senderEmail,
-          attachments
-        })
+          attachments,
+        }),
       });
 
       const result = await response.json();
@@ -436,10 +685,9 @@ export const notificationService = {
       }
 
       return true;
-
     } catch (error) {
       console.error('[NOTIFICATION] Erro ao processar envio de e-mail de limpeza:', error);
       return false;
     }
-  }
+  },
 };

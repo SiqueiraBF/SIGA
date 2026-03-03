@@ -244,4 +244,18 @@ export const fuelService = {
 
     return data as Abastecimento;
   },
+
+  async getAllNuntecTransferIds() {
+    // Fetch all non-null nuntec_transfer_ids to filter pending list globally
+    // We select only the column to minimize data transfer
+    const { data, error } = await supabase
+      .from('abastecimentos')
+      .select('nuntec_transfer_id')
+      .not('nuntec_transfer_id', 'is', null);
+
+    if (error) throw error;
+
+    // Return array of strings
+    return (data || []).map(d => String(d.nuntec_transfer_id));
+  },
 };

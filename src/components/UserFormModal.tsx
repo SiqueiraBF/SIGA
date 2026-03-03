@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../services/supabaseService';
+import { db, roleService } from '../services/supabaseService';
 import type { Usuario, Funcao, Fazenda } from '../types';
 import { Save, UserPlus, Eye, EyeOff, Wand2, Mail, Phone, AtSign, User } from 'lucide-react';
 
@@ -64,19 +64,12 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
 
   const loadData = async () => {
     const [funcoesData, fazendasData, usersData] = await Promise.all([
-      db.getRole(''),
+      roleService.getAll(),
       db.getAllFarms(),
       db.getAllUsers(),
     ]);
-    // Load all funcoes - temporary fix for getting all
-    const allFuncoes = await Promise.all(
-      [
-        '00000000-0000-0000-0000-000000000001',
-        '00000000-0000-0000-0000-000000000002',
-        '00000000-0000-0000-0000-000000000003',
-      ].map((id) => db.getRole(id)),
-    );
-    setFuncoes(allFuncoes.filter((f): f is Funcao => f !== null));
+
+    setFuncoes(funcoesData);
     setFazendas(fazendasData);
     setAllUsers(usersData);
   };

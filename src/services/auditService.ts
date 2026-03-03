@@ -29,6 +29,12 @@ export interface AuditItem {
         density_20c?: number;
         volume_20c?: number; // Volume @ 20C
     };
+    groupedSupplies?: {
+        id: string;
+        invoiceNumber: string;
+        volume: number;
+        date: string;
+    }[];
 }
 
 export interface AuditStats {

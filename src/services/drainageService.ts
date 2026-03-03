@@ -126,15 +126,17 @@ export const drainageService = {
     },
 
     // New method for Dashboard stats
-    async getLatestDrainagesByStation() {
-        // Fetch ALL drainages ordered by date desc. 
-        // Client-side dedup is safer unless we create a specific Postgres function (RPC) for "DISTINCT ON"
-        // Given the expected volume isn't huge yet, fetching standard list and processing is acceptable.
-        // We only need the latest date per station AND tank.
-        const { data, error } = await supabase
+    async getLatestDrainagesByStation(fazendaId?: string) {
+        let query = supabase
             .from('station_drainages')
             .select('posto_id, fazenda_id, data_drenagem')
             .order('data_drenagem', { ascending: false });
+
+        if (fazendaId) {
+            query = query.eq('fazenda_id', fazendaId);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
         return data as { posto_id: string; fazenda_id: string; data_drenagem: string; tanque_identificador?: string }[];

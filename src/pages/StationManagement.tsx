@@ -342,17 +342,28 @@ export function StationManagement() {
   async function loadData() {
     setLoading(true);
     try {
+      const targetFarmId = role?.permissoes?.gestao_postos?.view_scope === 'SAME_FARM' ? user?.fazenda_id : undefined;
+
       // 1. Load Essential Data First (Fast)
-      const [fetchedFazendas, fetchedPostos, fetchedMeasurements, fetchedStationData, fetchedAdmeasurements, fetchedDrainages] = await Promise.all([
+      const [fetchedFazendas, fetchedPostos] = await Promise.all([
         db.getFazendas(),
-        fuelService.getPostos(),
-        nuntecService.getStockMeasurements(),
-        nuntecService.getStationsData(),
-        nuntecService.getAdmeasurements(),
-        drainageService.getLatestDrainagesByStation() // Added fetch
+        fuelService.getPostos(targetFarmId),
       ]);
       setFazendas(fetchedFazendas.filter((f) => f.ativo));
       setPostos(fetchedPostos);
+
+      const allowedReservoirs = fetchedPostos
+        .map(p => p.nuntec_reservoir_id ? String(p.nuntec_reservoir_id) : null)
+        .filter(Boolean) as string[];
+
+      // 2. Load Nuntec and Drainages Filtered Data
+      const [fetchedMeasurements, fetchedStationData, fetchedAdmeasurements, fetchedDrainages] = await Promise.all([
+        nuntecService.getStockMeasurements(allowedReservoirs),
+        nuntecService.getStationsData(allowedReservoirs),
+        nuntecService.getAdmeasurements(allowedReservoirs),
+        drainageService.getLatestDrainagesByStation(targetFarmId)
+      ]);
+
       setMeasurements(fetchedMeasurements);
       setStationData(fetchedStationData);
       setAdmeasurements(fetchedAdmeasurements);
@@ -366,21 +377,21 @@ export function StationManagement() {
       });
       setDrainageData(drainExample);
 
-      // 2. Page is usable now
+      // 3. Page is usable now
       setLoading(false);
 
-      // 3. Load Autonomy Data in Background (Slow)
-      loadAutonomyData();
+      // 4. Load Autonomy Data in Background (Slow)
+      loadAutonomyData(allowedReservoirs);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       setLoading(false);
     }
   }
 
-  async function loadAutonomyData() {
+  async function loadAutonomyData(allowedReservoirs: string[]) {
     setAutonomyLoading(true);
     try {
-      const fetchedTransfers = await nuntecService.getConsumptions(7);
+      const fetchedTransfers = await nuntecService.getConsumptions(7, undefined, allowedReservoirs);
       setTransfers(fetchedTransfers);
     } catch (error) {
       console.error('Erro ao carregar autonomia:', error);
@@ -428,6 +439,11 @@ export function StationManagement() {
 
   // Filter Logic
   const filteredPostos = postos.filter((p) => {
+    // 0. Permission Check: Same Farm
+    if (role?.permissoes?.gestao_postos?.view_scope === 'SAME_FARM') {
+      if (user?.fazenda_id && p.fazenda_id !== user.fazenda_id) return false;
+    }
+
     // 1. Filter by View Type (Physical vs Virtual)
     // Default to FISICO if tipo is undefined/null (Legacy compatibility)
     const pType = p.tipo || 'FISICO';
@@ -475,7 +491,13 @@ export function StationManagement() {
   const activePostos = postos.filter((p) => p.ativo).length;
 
   // Stats for the current view
-  const currentViewPostos = postos.filter(p => (p.tipo || 'FISICO') === viewType);
+  const currentViewPostos = postos.filter(p => {
+    // Permission Check: Same Farm
+    if (role?.permissoes?.gestao_postos?.view_scope === 'SAME_FARM') {
+      if (user?.fazenda_id && p.fazenda_id !== user.fazenda_id) return false;
+    }
+    return (p.tipo || 'FISICO') === viewType;
+  });
   const monitoredCount = currentViewPostos.filter(p => p.nuntec_reservoir_id).length;
 
   if (loading) {
@@ -485,7 +507,7 @@ export function StationManagement() {
           <PageHeader
             title="Gestão de Postos"
             subtitle="Cadastre e gerencie os postos de abastecimento internos"
-            icon={MapPin}
+            icon={Warehouse}
           />
           <StatsSkeleton count={3} />
           <TableSkeleton rows={5} columns={3} />
@@ -500,7 +522,7 @@ export function StationManagement() {
       <PageHeader
         title="Gestão de Postos"
         subtitle="Cadastre e gerencie os postos de abastecimento internos"
-        icon={MapPin}
+        icon={Warehouse}
       >
         {canManage && (
           <div className="flex gap-2">

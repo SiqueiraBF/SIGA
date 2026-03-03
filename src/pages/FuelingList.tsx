@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Abastecimento, Fazenda, Posto, Modulo, NuntecTransfer } from '../types';
 import {
   Plus,
+  Search,
   Fuel,
   Droplet,
   Truck,
@@ -28,7 +29,7 @@ import {
   EyeOff,
   ShieldCheck,
 } from 'lucide-react';
-import { format, parseISO, subDays } from 'date-fns';
+import { format, parseISO, isBefore, isAfter, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { FuelingFormModal } from '../components/FuelingFormModal';
 import { FuelingDetailsModal } from '../components/FuelingDetailsModal';
 import { FuelingResolutionModal } from '../components/FuelingResolutionModal';
@@ -83,8 +84,8 @@ export function FuelingList() {
   }, [location.state, searchParams]);
 
   // Filters & View Mode
-  const [filterStartDate, setFilterStartDate] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
-  const [filterEndDate, setFilterEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   // New Filters Requested
@@ -154,6 +155,7 @@ export function FuelingList() {
 
   const viewScope = role?.permissoes?.[MODULE_KEY]?.view_scope;
   const canViewAllFarms = viewScope === 'ALL' || role?.nome === 'Administrador';
+  const targetFarmId = !canViewAllFarms ? user?.fazenda_id : undefined;
 
   // --- Infinite Query for Abastecimentos ---
 
@@ -168,16 +170,13 @@ export function FuelingList() {
     queryKey: ['abastecimentos', {
       startDate: filterStartDate,
       endDate: filterEndDate,
-      // Include other filters in key to reset list on change could be good, but we filter client side too?
-      // Actually we are moving to Server Side pagination, so we MUST include filters in key if we want server filtering.
-      // But currently getUser relies on client filtering for some stuff.
-      // For now, let's keep Server Side strictly for Pagination + Date Range + Farm Scope (if we moved that).
-      // The current getAbastecimentos only filters by Date, Farm, Posto.
+      farmId: targetFarmId,
     }],
     queryFn: async ({ pageParam = 0 }) => {
       return fuelService.getAbastecimentos({
         dataInicio: filterStartDate || undefined,
         dataFim: filterEndDate || undefined,
+        fazenda_id: targetFarmId,
         page: pageParam as number,
         limit: 50
       });
@@ -202,7 +201,7 @@ export function FuelingList() {
     try {
       const [dataFazendas, dataPostos, dataUsuarios] = await Promise.all([
         db.getFazendas(),
-        fuelService.getPostos(),
+        fuelService.getPostos(targetFarmId),
         db.getAllUsers(),
       ]);
       setFazendas(dataFazendas);
@@ -286,6 +285,14 @@ export function FuelingList() {
     retry: 1
   });
 
+  // 3b. Fetch Global Existing Transfer IDs (to avoid pagination issue)
+  const { data: globalExistingIds = [] } = useQuery({
+    queryKey: ['all-existing-nuntec-ids'],
+    queryFn: fuelService.getAllNuntecTransferIds,
+    staleTime: 1000 * 60 * 5, // 5 min
+    enabled: viewMode === 'INTEGRATION'
+  });
+
   const nuntecError = rawNuntecError ? (rawNuntecError as Error).message : null;
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
 
@@ -296,26 +303,23 @@ export function FuelingList() {
     if (!canViewAllFarms && user?.fazenda_id) {
       const visibleReservoirIds = new Set(
         configuredPostos
-          .filter((p) => p.fazenda_id === user.fazenda_id)
-          .map((p) => p.nuntec_reservoir_id),
+          .filter((p) => p.fazenda_id === user.fazenda_id && p.nuntec_reservoir_id)
+          .map((p) => String(p.nuntec_reservoir_id)),
       );
       visible = rawTransfers.filter(
         (t) =>
-          t['pointing-in']['reservoir-id'] &&
-          visibleReservoirIds.has(t['pointing-in']['reservoir-id']),
+          t['pointing-in'] && t['pointing-in']['reservoir-id'] &&
+          visibleReservoirIds.has(String(t['pointing-in']['reservoir-id'])),
       );
     }
 
     // b. Active Abastecimentos Filter (Remove items that already have a linked abastecimento)
-    const existingTransferIds = new Set(
-      abastecimentos
-        .filter((a) => a.nuntec_transfer_id)
-        .map((a) => String(a.nuntec_transfer_id))
-    );
+    // Use the global list required to catch items not in current page
+    const existingTransferIds = new Set(globalExistingIds);
 
     return visible.filter(t => !existingTransferIds.has(String(t.id)));
 
-  }, [rawTransfers, abastecimentos, canViewAllFarms, user, configuredPostos]);
+  }, [rawTransfers, globalExistingIds, canViewAllFarms, user, configuredPostos]);
 
   // Create a filtered view of data based on permissions
   const visibleAbastecimentos = useMemo(() => {
@@ -595,6 +599,31 @@ export function FuelingList() {
       .reduce((acc, curr) => acc + Math.abs(curr['pointing-in'].amount), 0);
   }, [pendenciasNuntec, ignoredIds]);
 
+  // Quick Date Filters
+  const handleDateRange = (range: '7days' | 'month' | 'last-month') => {
+    const today = new Date();
+    let start, end;
+
+    switch (range) {
+      case '7days':
+        start = subDays(today, 7);
+        end = today;
+        break;
+      case 'month':
+        start = startOfMonth(today);
+        end = endOfMonth(today);
+        break;
+      case 'last-month':
+        const lastMonth = subMonths(today, 1);
+        start = startOfMonth(lastMonth);
+        end = endOfMonth(lastMonth);
+        break;
+    }
+
+    setFilterStartDate(format(start, 'yyyy-MM-dd'));
+    setFilterEndDate(format(end, 'yyyy-MM-dd'));
+  };
+
   const hasActiveFilters =
     filterVeiculo ||
     filterSemMedidor ||
@@ -687,342 +716,645 @@ export function FuelingList() {
         </button>
       </div>
 
-      {viewMode === 'AUDIT' ? (
+      <div className={viewMode === 'AUDIT' ? 'block' : 'hidden'}>
+        <div className="flex flex-col md:flex-row gap-4 p-4 border-b border-slate-200 bg-white mb-6">
+          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg self-start md:self-auto overflow-x-auto max-w-full">
+            <button
+              onClick={() => handleDateRange('7days')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${filterStartDate === format(subDays(new Date(), 7), 'yyyy-MM-dd') ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              7 Dias
+            </button>
+            <button
+              onClick={() => handleDateRange('month')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${filterStartDate === format(startOfMonth(new Date()), 'yyyy-MM-dd') ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Este Mês
+            </button>
+            <button
+              onClick={() => handleDateRange('last-month')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${filterStartDate === format(startOfMonth(subMonths(new Date(), 1)), 'yyyy-MM-dd') ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Mês Passado
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+            />
+            <span className="text-slate-400">-</span>
+            <input
+              type="date"
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+            />
+          </div>
+        </div>
+
         <ComplianceDashboard
           abastecimentos={abastecimentos}
           fazendas={fazendas}
           postos={postos}
           userFazendaId={user?.fazenda_id}
           canViewAllFarms={canViewAllFarms}
+          startDate={filterStartDate}
+          endDate={filterEndDate}
         />
-      ) : viewMode === 'LOCAL' ? (
-        <>
-          {/* KPIs - Single Interactive Breakdown Card */}
-          {/* ... existing content ... */}
-          {/* Custom Card: Volume Breakdown by Posto (Pending) - Full Width */}
-          <div className="bg-white rounded-2xl p-6 border-2 border-slate-200 shadow-sm flex flex-col justify-between mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg text-green-600">
-                  <Droplet size={24} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Vol. Pendente por Posto</p>
-                  <p className="text-xs text-slate-400 font-medium">clique no posto para filtrar a lista</p>
-                </div>
-              </div>
-              <div
-                className={`text-right cursor-pointer hover:opacity-80 transition-opacity ${!selectedPostoId ? 'text-green-600' : 'text-slate-400'}`}
-                onClick={() => setSelectedPostoId(null)} // Click total to clear filter
-                title="Limpar filtro de posto"
-              >
-                <span className="text-3xl font-bold">{pendenciasVolume.toFixed(0)} <span className="text-base font-medium">Total</span></span>
-              </div>
-            </div>
+      </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
-              {breakdownData.length > 0 ? (
-                breakdownData.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedPostoId(selectedPostoId === item.id ? null : item.id)}
-                    className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
-                        ${selectedPostoId === item.id
-                        ? 'bg-green-50 border-green-200 ring-1 ring-green-200 shadow-sm'
-                        : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden flex-1">
-                      <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedPostoId === item.id ? 'bg-green-200 text-green-800' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
-                      <span className={`font-medium truncate text-xs ${selectedPostoId === item.id ? 'text-green-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
-                    </div>
-                    <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedPostoId === item.id ? 'text-green-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
+      <div className={viewMode !== 'AUDIT' ? 'block space-y-6' : 'hidden'}>
+        {viewMode === 'LOCAL' && (
+          <>
+            {/* VOLUME BREAKDOWN CARD (Matches Integration View) */}
+            <div className="bg-white rounded-2xl p-6 border-2 border-slate-200 shadow-sm flex flex-col justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg text-green-600">
+                    <Droplet size={24} />
                   </div>
-                ))
-              ) : (
-                <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência de volume.</div>
-              )}
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Vol. Pendente por Posto</p>
+                    <p className="text-xs text-slate-400 font-medium">clique no posto para filtrar a lista</p>
+                  </div>
+                </div>
+                <div
+                  className={`text-right cursor-pointer hover:opacity-80 transition-opacity ${!selectedPostoId ? 'text-green-600' : 'text-slate-400'}`}
+                  onClick={() => setSelectedPostoId(null)}
+                  title="Limpar filtro de posto"
+                >
+                  <span className="text-3xl font-bold">{pendenciasVolume.toFixed(0)} <span className="text-base font-medium">Total</span></span>
+                </div>
+              </div>
+
+              {/* Grid de Postos (Matches Integration View) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
+                {breakdownData.length > 0 ? (
+                  breakdownData.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedPostoId(selectedPostoId === item.id ? null : item.id)}
+                      className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
+                        ${selectedPostoId === item.id
+                          ? 'bg-green-50 border-green-200 ring-1 ring-green-200 shadow-sm'
+                          : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden flex-1">
+                        <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedPostoId === item.id ? 'bg-green-200 text-green-900' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
+                        <span className={`font-medium truncate text-xs ${selectedPostoId === item.id ? 'text-green-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
+                      </div>
+                      <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedPostoId === item.id ? 'text-green-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência encontrada.</div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Filters */}
-          <FilterBar
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            searchPlaceholder="Buscar por Nº, Veículo ou Operador..."
-            onClear={clearFilters}
-            hasActiveFilters={!!hasActiveFilters}
-            advancedFilters={
-              <>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <Calendar size={12} /> Data Inicial
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full text-sm rounded-xl border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <Calendar size={12} /> Data Final
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full text-sm rounded-xl border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <Truck size={12} /> Veículo
-                  </label>
-                  <select
-                    className="w-full text-sm rounded-xl border-slate-200 bg-white py-2"
-                    value={filterVeiculo}
-                    onChange={(e) => setFilterVeiculo(e.target.value)}
-                  >
-                    <option value="">Todos</option>
-                    {uniqueVehicles.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl w-full hover:bg-slate-100 transition-colors">
+            <FilterBar
+              onSearch={setSearchTerm}
+              searchValue={searchTerm}
+              searchPlaceholder="Buscar por Nº, Veículo ou Operador..."
+              onClear={() => {
+                setSearchTerm('');
+                setFilterVeiculo('');
+                setFilterSemMedidor(false);
+                setFilterStartDate('');
+                setFilterEndDate('');
+              }}
+              hasActiveFilters={
+                !!searchTerm || !!filterVeiculo || filterSemMedidor || !!filterStartDate || !!filterEndDate
+              }
+              advancedFilters={
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Calendar size={12} /> Data Inicial
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={filterSemMedidor}
-                      onChange={(e) => setFilterSemMedidor(e.target.checked)}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      type="date"
+                      className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
                     />
-                    <span className="text-sm font-semibold text-slate-600">Apenas Sem Medidor</span>
-                  </label>
-                </div>
-              </>
-            }
-          />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Calendar size={12} /> Data Final
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Truck size={12} /> Veículo
+                    </label>
+                    <select
+                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      value={filterVeiculo}
+                      onChange={(e) => setFilterVeiculo(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      {uniqueVehicles.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end pb-2">
+                    <label className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 w-full cursor-pointer hover:bg-slate-100 transition-colors">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={filterSemMedidor}
+                        onChange={(e) => setFilterSemMedidor(e.target.checked)}
+                      />
+                      <span className="font-medium">Apenas Sem Medidor</span>
+                    </label>
+                  </div>
+                </>
+              }
+            />
 
-          {/* Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* Main Table Container */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-600 font-bold text-xs border-b border-slate-200 uppercase tracking-wider">
+                    <tr>
+                      <th
+                        className="px-6 py-4 cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('data')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Data{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'data'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('fazenda')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Posto{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'fazenda'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('operador')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Operador{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'operador'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('veiculo')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Veículo{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'veiculo'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 text-right cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('volume')}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          Volume (L){' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'volume'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 text-right cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('marcador')}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          Marcador{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'marcador'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-4 text-center cursor-pointer hover:bg-slate-100"
+                        onClick={() => handleSort('status')}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          Status{' '}
+                          <SortIcon
+                            active={sortConfig?.key === 'status'}
+                            direction={sortConfig?.direction}
+                          />
+                        </div>
+                      </th>
+                      <th className="px-6 py-4 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {sortedList.length === 0 ? (
+                      <tr>
+                        <td colSpan={9}>
+                          <EmptyState />
+                        </td>
+                      </tr>
+                    ) : (
+                      sortedList.map((item) => {
+                        const canEditThis = checkAccess({
+                          module: MODULE_KEY,
+                          action: 'edit',
+                          resourceOwnerId: item.usuario_id,
+                          resourceStatus: item.status,
+                        });
+
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() => handleDetails(item)}
+                            className={`group transition-colors border-l-4 cursor-pointer hover:bg-slate-50 ${item.status === 'PENDENTE' ? 'border-l-amber-400 bg-amber-50/10' : 'border-l-transparent'}`}
+                          >
+                            {/* Data */}
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-slate-600">
+                                  {format(parseISO(item.data_abastecimento), 'dd/MM/yyyy HH:mm')}
+                                </span>
+                                <div className="flex gap-1.5 mt-0.5">
+                                  {item.nuntec_transfer_id && (
+                                    <span
+                                      className="text-[10px] text-amber-600 font-mono"
+                                      title="ID Nuntec"
+                                    >
+                                      ID: {item.nuntec_transfer_id.slice(0, 8)}...
+                                    </span>
+                                  )}
+                                  <span
+                                    className="text-[10px] text-slate-400 font-mono"
+                                    title="Número Local"
+                                  >
+                                    #{item.numero}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Origem / Posto (Bold Posto, Small Fazenda - Nuntec Style) */}
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-700" title={item.posto?.nome}>
+                                  {item.posto?.nome}
+                                </span>
+                                <span className="text-xs text-slate-500" title={item.fazenda?.nome}>
+                                  {item.fazenda?.nome}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Operador (Shows item.operador) */}
+                            <td className="px-6 py-4 text-slate-600 font-medium">{item.operador}</td>
+
+                            {/* Veículo (Standard Display) */}
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <StatusBadge
+                                  status={item.veiculo_possui_cadastro ? '' : '⚠️'}
+                                  variant={item.veiculo_possui_cadastro ? 'info' : 'warning'}
+                                  icon={Truck}
+                                  size="sm"
+                                  className={
+                                    item.veiculo_possui_cadastro
+                                      ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                      : 'bg-orange-50 text-orange-600 border-orange-100'
+                                  }
+                                />
+                                <span
+                                  className="font-medium text-slate-700 truncate max-w-[100px]"
+                                  title={item.veiculo_nome || item.veiculo_id || ''}
+                                >
+                                  {item.veiculo_nome || item.veiculo_id?.slice(0, 8)}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Volume */}
+                            <td className="px-6 py-4 text-right">
+                              <span className="font-bold text-slate-700">
+                                {item.volume.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* Marcador */}
+                            <td className="px-6 py-4 text-right">
+                              <span className="font-mono text-slate-600">
+                                {item.tipo_marcador === 'SEM_MEDIDOR' ? '-' : item.leitura_marcador}
+                              </span>
+                            </td>
+
+                            {/* Status (Center) */}
+                            <td className="px-6 py-4 text-center">
+                              <StatusBadge
+                                status={item.status === 'PENDENTE' ? 'Pendente' : 'Baixado'}
+                                variant={item.status === 'PENDENTE' ? 'warning' : 'success'}
+                                size="sm"
+                              />
+                            </td>
+
+                            {/* Ações */}
+                            <td className="px-6 py-4 text-center">
+                              <TableActions
+                                onHistory={() => {
+                                  setHistoryId(item.id);
+                                  setShowHistory(true);
+                                }}
+                                onEdit={undefined}
+                                onDelete={
+                                  canEditThis && (item.status === 'PENDENTE' || hasFullManagement)
+                                    ? () => handleDelete(item)
+                                    : undefined
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+
+                {/* Sentinel for Infinite Scroll */}
+                <div ref={observerTarget} className="h-4 p-4 flex justify-center w-full">
+                  {isFetchingNextPage && (
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  )}
+                  {!hasNextPage && abastecimentos.length > 0 && (
+                    <span className="text-xs text-slate-400 italic">Todos os registros carregados</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {viewMode !== 'LOCAL' && (
+          // --- INTEGRATION VIEW ---
+          <div className="space-y-6">
+            {/* Nuntec Interactive Card - Replaces Old Header */}
+            <div className="bg-white rounded-2xl p-6 border-2 border-amber-200 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+                    <Link size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Pendências Nuntec</p>
+                    <div className="flex flex-col gap-0.5 mt-0.5">
+                      <p className="text-[10px] text-slate-400 leading-tight hidden sm:block">
+                        Transf. para "Gerente" aguardando dados.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 font-medium">
+                        <span className="flex items-center gap-1" title="Última atualização">
+                          <RefreshCw size={10} /> Atualizado: {lastUpdate ? format(lastUpdate, 'HH:mm') : '-'}
+                        </span>
+                        <span className="flex items-center gap-1" title="Período de sincronização">
+                          <Calendar size={10} /> Período: {syncStartDate ? `A partir de ${format(parseISO(syncStartDate), 'dd/MM/yyyy')}` : 'Padrão'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="flex flex-col items-end">
+                    <button
+                      onClick={() => setShowIgnored(!showIgnored)}
+                      className={`text-[10px] flex items-center gap-1 px-2 py-1 rounded border mb-1 transition-colors ${showIgnored ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                        }`}
+                    >
+                      {showIgnored ? <EyeOff size={10} /> : <Eye size={10} />}
+                      {showIgnored ? 'Ocultar Ignorados' : 'Ver Ignorados'}
+                    </button>
+                    <div
+                      className={`cursor-pointer hover:opacity-80 transition-opacity ${!selectedNuntecReservoirId ? 'text-amber-600' : 'text-slate-400'}`}
+                      onClick={() => setSelectedNuntecReservoirId(null)}
+                      title="Limpar filtro"
+                    >
+                      <span className="text-3xl font-bold">{nuntecVolumeTotal.toFixed(0)} <span className="text-base font-medium">L</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid de Postos Nuntec */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
+                {nuntecBreakdown.length > 0 ? (
+                  nuntecBreakdown.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedNuntecReservoirId(selectedNuntecReservoirId === item.id ? null : item.id)}
+                      className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
+                        ${selectedNuntecReservoirId === item.id
+                          ? 'bg-amber-50 border-amber-200 ring-1 ring-amber-200 shadow-sm'
+                          : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden flex-1">
+                        <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedNuntecReservoirId === item.id ? 'bg-amber-200 text-amber-900' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
+                        <span className={`font-medium truncate text-xs ${selectedNuntecReservoirId === item.id ? 'text-amber-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
+                      </div>
+                      <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedNuntecReservoirId === item.id ? 'text-amber-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência encontrada.</div>
+                )}
+              </div>
+            </div>
+
+            {nuntecError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
+                <div className="p-2 bg-red-100 rounded-lg text-red-600 shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-red-800">Falha na Sincronização</h4>
+                  <p className="text-sm text-red-700 mt-1 leading-relaxed">
+                    Não foi possível buscar as pendências da Nuntec.
+                    <br />
+                    <span className="font-mono text-xs bg-red-100/50 px-1 rounded">
+                      {nuntecError}
+                    </span>
+                  </p>
+                </div>
+                {hasFullManagement && (
+                  <button
+                    onClick={() => navigate('/postos')}
+                    className="px-4 py-2 bg-white border border-red-200 text-red-700 text-xs font-bold rounded-lg hover:bg-red-50 hover:border-red-300 transition-all shadow-sm shrink-0"
+                  >
+                    Ver Configuração
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-600 font-bold text-xs border-b border-slate-200 uppercase tracking-wider">
                   <tr>
-                    <th
-                      className="px-6 py-4 cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('data')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Data{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'data'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('fazenda')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Posto{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'fazenda'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('operador')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Operador{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'operador'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('veiculo')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Veículo{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'veiculo'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 text-right cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('volume')}
-                    >
-                      <div className="flex items-center justify-end gap-2">
-                        Volume (L){' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'volume'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 text-right cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('marcador')}
-                    >
-                      <div className="flex items-center justify-end gap-2">
-                        Marcador{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'marcador'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      className="px-6 py-4 text-center cursor-pointer hover:bg-slate-100"
-                      onClick={() => handleSort('status')}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        Status{' '}
-                        <SortIcon
-                          active={sortConfig?.key === 'status'}
-                          direction={sortConfig?.direction}
-                        />
-                      </div>
-                    </th>
-                    <th className="px-6 py-4 text-center">Ações</th>
+                    <th className="px-6 py-4">Data Transferência</th>
+                    <th className="px-6 py-4">Destino (Posto)</th>
+                    <th className="px-6 py-4">Operador Original</th>
+                    <th className="px-6 py-4 text-right">Volume (L)</th>
+                    <th className="px-6 py-4 text-center">Status</th>
+                    <th className="px-6 py-4 text-center">Ação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {sortedList.length === 0 ? (
+                  {pendenciasNuntec.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>
-                        <EmptyState />
+                      <td colSpan={6}>
+                        <EmptyState
+                          icon={CheckCircle}
+                          title="Tudo em dia!"
+                          description="Nenhuma transferência pendente encontrada na integração."
+                        />
                       </td>
                     </tr>
                   ) : (
-                    sortedList.map((item) => {
-                      const canEditThis = checkAccess({
-                        module: MODULE_KEY,
-                        action: 'edit',
-                        resourceOwnerId: item.usuario_id,
-                        resourceStatus: item.status,
-                      });
+                    pendenciasNuntec.map((t) => {
+                      const isIgnored = ignoredIds.has(t.id);
+
+                      // Mode Logic:
+                      // If Show Ignored is OFF -> Show only NOT Ignored
+                      // If Show Ignored is ON -> Show only Ignored
+                      if (showIgnored) {
+                        if (!isIgnored) return null;
+                      } else {
+                        if (isIgnored) return null;
+                      }
+
+                      // Nuntec Station Filter
+                      const rowResId = Number(t['pointing-in']['reservoir-id']);
+                      if (selectedNuntecReservoirId && rowResId !== selectedNuntecReservoirId) return null;
+
+                      // Find Posto Name
+                      const posto = postos.find(
+                        (p) => p.nuntec_reservoir_id === t['pointing-in']['reservoir-id'],
+                      );
+                      const fazenda = fazendas.find((f) => f.id === posto?.fazenda_id);
 
                       return (
                         <tr
-                          key={item.id}
-                          onClick={() => handleDetails(item)}
-                          className={`group transition-colors border-l-4 cursor-pointer hover:bg-slate-50 ${item.status === 'PENDENTE' ? 'border-l-amber-400 bg-amber-50/10' : 'border-l-transparent'}`}
+                          key={t.id}
+                          className={`transition-colors ${isIgnored ? 'bg-slate-50' : 'hover:bg-amber-50/30'}`}
                         >
-                          {/* Data */}
                           <td className="px-6 py-4">
                             <div className="flex flex-col">
-                              <span className="font-medium text-slate-600">
-                                {format(parseISO(item.data_abastecimento), 'dd/MM/yyyy HH:mm')}
-                              </span>
-                              <div className="flex gap-1.5 mt-0.5">
-                                {item.nuntec_transfer_id && (
-                                  <span
-                                    className="text-[10px] text-amber-600 font-mono"
-                                    title="ID Nuntec"
-                                  >
-                                    ID: {item.nuntec_transfer_id.slice(0, 8)}...
-                                  </span>
-                                )}
-                                <span
-                                  className="text-[10px] text-slate-400 font-mono"
-                                  title="Número Local"
-                                >
-                                  #{item.numero}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Origem / Posto (Bold Posto, Small Fazenda - Nuntec Style) */}
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-700" title={item.posto?.nome}>
-                                {item.posto?.nome}
-                              </span>
-                              <span className="text-xs text-slate-500" title={item.fazenda?.nome}>
-                                {item.fazenda?.nome}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Operador (Shows item.operador) */}
-                          <td className="px-6 py-4 text-slate-600 font-medium">{item.operador}</td>
-
-                          {/* Veículo (Standard Display) */}
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <StatusBadge
-                                status={item.veiculo_possui_cadastro ? '' : '⚠️'}
-                                variant={item.veiculo_possui_cadastro ? 'info' : 'warning'}
-                                icon={Truck}
-                                size="sm"
-                                className={
-                                  item.veiculo_possui_cadastro
-                                    ? 'bg-blue-50 text-blue-600 border-blue-100'
-                                    : 'bg-orange-50 text-orange-600 border-orange-100'
-                                }
-                              />
                               <span
-                                className="font-medium text-slate-700 truncate max-w-[100px]"
-                                title={item.veiculo_nome || item.veiculo_id || ''}
+                                className={`font-medium ${isIgnored ? 'text-slate-400' : 'text-slate-600'}`}
                               >
-                                {item.veiculo_nome || item.veiculo_id?.slice(0, 8)}
+                                {format(parseISO(t['start-at']), 'dd/MM/yyyy HH:mm')}
+                              </span>
+                              <span
+                                className="text-[10px] text-slate-400 font-mono mt-0.5"
+                                title="ID da Transferência Nuntec"
+                              >
+                                ID: {t.id}
                               </span>
                             </div>
                           </td>
-
-                          {/* Volume */}
-                          <td className="px-6 py-4 text-right">
-                            <span className="font-bold text-slate-700">
-                              {item.volume.toFixed(2)}
-                            </span>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span
+                                className={`font-bold ${isIgnored ? 'text-slate-500' : 'text-slate-700'}`}
+                              >
+                                {posto
+                                  ? posto.nome
+                                  : `Reservatório #${t['pointing-in']['reservoir-id'] || '?'}`}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {fazenda
+                                  ? fazenda.nome
+                                  : posto
+                                    ? 'Fazenda não vinculada'
+                                    : 'Não mapeado'}
+                              </span>
+                              {/* Debug/Info helper */}
+                              <span className="text-[10px] text-amber-600 font-mono mt-0.5">
+                                (ID Nuntec: {t['pointing-in']['reservoir-id']})
+                              </span>
+                            </div>
                           </td>
-
-                          {/* Marcador */}
-                          <td className="px-6 py-4 text-right">
-                            <span className="font-mono text-slate-600">
-                              {item.tipo_marcador === 'SEM_MEDIDOR' ? '-' : item.leitura_marcador}
-                            </span>
+                          <td className="px-6 py-4 text-slate-600">
+                            {t.operatorName || t['operator-id'] || '-'}
                           </td>
-
-                          {/* Status (Center) */}
+                          <td className="px-6 py-4 text-right font-bold text-slate-700">
+                            {Math.abs(t['pointing-in'].amount).toFixed(2)}
+                          </td>
                           <td className="px-6 py-4 text-center">
-                            <StatusBadge
-                              status={item.status === 'PENDENTE' ? 'Pendente' : 'Baixado'}
-                              variant={item.status === 'PENDENTE' ? 'warning' : 'success'}
-                              size="sm"
-                            />
+                            {isIgnored ? (
+                              <StatusBadge status="Ignorado" variant="default" size="sm" />
+                            ) : (
+                              <StatusBadge status="Pendente Dados" variant="warning" size="sm" />
+                            )}
                           </td>
-
-                          {/* Ações */}
                           <td className="px-6 py-4 text-center">
-                            <TableActions
-                              onHistory={() => {
-                                setHistoryId(item.id);
-                                setShowHistory(true);
-                              }}
-                              onEdit={undefined}
-                              onDelete={
-                                canEditThis && (item.status === 'PENDENTE' || hasFullManagement)
-                                  ? () => handleDelete(item)
-                                  : undefined
-                              }
-                            />
+                            <div className="flex items-center justify-center gap-2">
+                              {isIgnored ? (
+                                <button
+                                  onClick={() => handleRestore(t)}
+                                  className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition-all flex items-center gap-1.5 border border-slate-200"
+                                  title="Restaurar para pendentes"
+                                >
+                                  <Undo2 size={14} /> Restaurar
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleResolveNuntec(t)}
+                                    className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-sm transition-all flex items-center gap-2"
+                                  >
+                                    Review & Baixar
+                                  </button>
+                                  {canIgnoreNuntec && (
+                                    <button
+                                      onClick={() => handleIgnore(t)}
+                                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                      title="Ignorar esta pendência"
+                                    >
+                                      <Ban size={16} />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1030,327 +1362,77 @@ export function FuelingList() {
                   )}
                 </tbody>
               </table>
-
-              {/* Sentinel for Infinite Scroll */}
-              <div ref={observerTarget} className="h-4 p-4 flex justify-center w-full">
-                {isFetchingNextPage && (
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                )}
-                {!hasNextPage && abastecimentos.length > 0 && (
-                  <span className="text-xs text-slate-400 italic">Todos os registros carregados</span>
-                )}
-              </div>
             </div>
           </div>
-        </>
-      ) : (
-        // --- INTEGRATION VIEW ---
-        <div className="space-y-6">
-          {/* Nuntec Interactive Card - Replaces Old Header */}
-          <div className="bg-white rounded-2xl p-6 border-2 border-amber-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
-                  <Link size={24} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Pendências Nuntec</p>
-                  <div className="flex flex-col gap-0.5 mt-0.5">
-                    <p className="text-[10px] text-slate-400 leading-tight hidden sm:block">
-                      Transf. para "Gerente" aguardando dados.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 font-medium">
-                      <span className="flex items-center gap-1" title="Última atualização">
-                        <RefreshCw size={10} /> Atualizado: {lastUpdate ? format(lastUpdate, 'HH:mm') : '-'}
-                      </span>
-                      <span className="flex items-center gap-1" title="Período de sincronização">
-                        <Calendar size={10} /> Período: {syncStartDate ? `A partir de ${format(parseISO(syncStartDate), 'dd/MM/yyyy')}` : 'Padrão'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+        )}
 
-              <div className="text-right">
-                <div className="flex flex-col items-end">
-                  <button
-                    onClick={() => setShowIgnored(!showIgnored)}
-                    className={`text-[10px] flex items-center gap-1 px-2 py-1 rounded border mb-1 transition-colors ${showIgnored ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-                      }`}
-                  >
-                    {showIgnored ? <EyeOff size={10} /> : <Eye size={10} />}
-                    {showIgnored ? 'Ocultar Ignorados' : 'Ver Ignorados'}
-                  </button>
-                  <div
-                    className={`cursor-pointer hover:opacity-80 transition-opacity ${!selectedNuntecReservoirId ? 'text-amber-600' : 'text-slate-400'}`}
-                    onClick={() => setSelectedNuntecReservoirId(null)}
-                    title="Limpar filtro"
-                  >
-                    <span className="text-3xl font-bold">{nuntecVolumeTotal.toFixed(0)} <span className="text-base font-medium">L</span></span>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <FuelingFormModal
+          isOpen={isFormOpen}
+          onClose={() => setIsFormOpen(false)}
+          onSave={handleFormSave}
+          initialData={selectedItem}
+          fazendas={fazendas}
+          postos={postos}
+        />
 
-            {/* Grid de Postos Nuntec */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-2">
-              {nuntecBreakdown.length > 0 ? (
-                nuntecBreakdown.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedNuntecReservoirId(selectedNuntecReservoirId === item.id ? null : item.id)}
-                    className={`flex items-center justify-between text-sm py-2 px-3 rounded-lg cursor-pointer transition-all border group
-                        ${selectedNuntecReservoirId === item.id
-                        ? 'bg-amber-50 border-amber-200 ring-1 ring-amber-200 shadow-sm'
-                        : 'bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden flex-1">
-                      <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full min-w-[24px] text-center ${selectedNuntecReservoirId === item.id ? 'bg-amber-200 text-amber-900' : 'bg-white text-slate-500 shadow-sm'}`}>{item.count}</span>
-                      <span className={`font-medium truncate text-xs ${selectedNuntecReservoirId === item.id ? 'text-amber-900' : 'text-slate-600 group-hover:text-slate-800'}`} title={item.label}>{item.label}</span>
-                    </div>
-                    <span className={`font-bold ml-2 text-xs whitespace-nowrap ${selectedNuntecReservoirId === item.id ? 'text-amber-700' : 'text-slate-500'}`}>{item.volume.toFixed(0)} L</span>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full text-sm text-slate-400 italic py-4 text-center">Nenhuma pendência encontrada.</div>
-              )}
-            </div>
-          </div>
+        <FuelingDetailsModal
+          isOpen={isDetailsOpen}
+          onClose={() => setIsDetailsOpen(false)}
+          onConfirm={
+            selectedItem &&
+              checkAccess({
+                module: MODULE_KEY,
+                action: 'confirm',
+                resourceOwnerId: selectedItem.usuario_id,
+                resourceStatus: selectedItem.status,
+              })
+              ? (nuntecId?: string) => selectedItem && handleConfirm(selectedItem, nuntecId)
+              : undefined
+          }
+          data={
+            selectedItem
+              ? {
+                ...selectedItem,
+                usuario: selectedItem.usuario || {
+                  nome:
+                    usuarios.find((u) => u.id === selectedItem.usuario_id)?.nome || 'Desconhecido',
+                },
+              }
+              : undefined
+          }
+        />
 
-          {nuntecError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
-              <div className="p-2 bg-red-100 rounded-lg text-red-600 shrink-0">
-                <AlertTriangle size={20} />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-bold text-red-800">Falha na Sincronização</h4>
-                <p className="text-sm text-red-700 mt-1 leading-relaxed">
-                  Não foi possível buscar as pendências da Nuntec.
-                  <br />
-                  <span className="font-mono text-xs bg-red-100/50 px-1 rounded">
-                    {nuntecError}
-                  </span>
-                </p>
-              </div>
-              {hasFullManagement && (
-                <button
-                  onClick={() => navigate('/postos')}
-                  className="px-4 py-2 bg-white border border-red-200 text-red-700 text-xs font-bold rounded-lg hover:bg-red-50 hover:border-red-300 transition-all shadow-sm shrink-0"
-                >
-                  Ver Configuração
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-600 font-bold text-xs border-b border-slate-200 uppercase tracking-wider">
-                <tr>
-                  <th className="px-6 py-4">Data Transferência</th>
-                  <th className="px-6 py-4">Destino (Posto)</th>
-                  <th className="px-6 py-4">Operador Original</th>
-                  <th className="px-6 py-4 text-right">Volume (L)</th>
-                  <th className="px-6 py-4 text-center">Status</th>
-                  <th className="px-6 py-4 text-center">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {pendenciasNuntec.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>
-                      <EmptyState
-                        icon={CheckCircle}
-                        title="Tudo em dia!"
-                        description="Nenhuma transferência pendente encontrada na integração."
-                      />
-                    </td>
-                  </tr>
-                ) : (
-                  pendenciasNuntec.map((t) => {
-                    const isIgnored = ignoredIds.has(t.id);
-
-                    // Mode Logic:
-                    // If Show Ignored is OFF -> Show only NOT Ignored
-                    // If Show Ignored is ON -> Show only Ignored
-                    if (showIgnored) {
-                      if (!isIgnored) return null;
-                    } else {
-                      if (isIgnored) return null;
-                    }
-
-                    // Nuntec Station Filter
-                    const rowResId = Number(t['pointing-in']['reservoir-id']);
-                    if (selectedNuntecReservoirId && rowResId !== selectedNuntecReservoirId) return null;
-
-                    // Find Posto Name
-                    const posto = postos.find(
-                      (p) => p.nuntec_reservoir_id === t['pointing-in']['reservoir-id'],
-                    );
-                    const fazenda = fazendas.find((f) => f.id === posto?.fazenda_id);
-
-                    return (
-                      <tr
-                        key={t.id}
-                        className={`transition-colors ${isIgnored ? 'bg-slate-50' : 'hover:bg-amber-50/30'}`}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span
-                              className={`font-medium ${isIgnored ? 'text-slate-400' : 'text-slate-600'}`}
-                            >
-                              {format(parseISO(t['start-at']), 'dd/MM/yyyy HH:mm')}
-                            </span>
-                            <span
-                              className="text-[10px] text-slate-400 font-mono mt-0.5"
-                              title="ID da Transferência Nuntec"
-                            >
-                              ID: {t.id}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span
-                              className={`font-bold ${isIgnored ? 'text-slate-500' : 'text-slate-700'}`}
-                            >
-                              {posto
-                                ? posto.nome
-                                : `Reservatório #${t['pointing-in']['reservoir-id'] || '?'}`}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {fazenda
-                                ? fazenda.nome
-                                : posto
-                                  ? 'Fazenda não vinculada'
-                                  : 'Não mapeado'}
-                            </span>
-                            {/* Debug/Info helper */}
-                            <span className="text-[10px] text-amber-600 font-mono mt-0.5">
-                              (ID Nuntec: {t['pointing-in']['reservoir-id']})
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {t.operatorName || t['operator-id'] || '-'}
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold text-slate-700">
-                          {Math.abs(t['pointing-in'].amount).toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          {isIgnored ? (
-                            <StatusBadge status="Ignorado" variant="default" size="sm" />
-                          ) : (
-                            <StatusBadge status="Pendente Dados" variant="warning" size="sm" />
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {isIgnored ? (
-                              <button
-                                onClick={() => handleRestore(t)}
-                                className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition-all flex items-center gap-1.5 border border-slate-200"
-                                title="Restaurar para pendentes"
-                              >
-                                <Undo2 size={14} /> Restaurar
-                              </button>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => handleResolveNuntec(t)}
-                                  className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-sm transition-all flex items-center gap-2"
-                                >
-                                  Review & Baixar
-                                </button>
-                                {canIgnoreNuntec && (
-                                  <button
-                                    onClick={() => handleIgnore(t)}
-                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                    title="Ignorar esta pendência"
-                                  >
-                                    <Ban size={16} />
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )
-      }
-
-      <FuelingFormModal
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        onSave={handleFormSave}
-        initialData={selectedItem}
-        fazendas={fazendas}
-        postos={postos}
-      />
-
-      <FuelingDetailsModal
-        isOpen={isDetailsOpen}
-        onClose={() => setIsDetailsOpen(false)}
-        onConfirm={
-          selectedItem &&
-            checkAccess({
-              module: MODULE_KEY,
-              action: 'confirm',
-              resourceOwnerId: selectedItem.usuario_id,
-              resourceStatus: selectedItem.status,
-            })
-            ? (nuntecId?: string) => selectedItem && handleConfirm(selectedItem, nuntecId)
-            : undefined
+        {
+          resolutionTransfer && (
+            <FuelingResolutionModal
+              isOpen={isResolutionOpen}
+              onClose={() => {
+                setIsResolutionOpen(false);
+                setResolutionTransfer(undefined);
+              }}
+              onResolve={handleResolveSuccess}
+              transfer={resolutionTransfer}
+              fazendas={fazendas}
+              postos={postos}
+            />
+          )
         }
-        data={
-          selectedItem
-            ? {
-              ...selectedItem,
-              usuario: selectedItem.usuario || {
-                nome:
-                  usuarios.find((u) => u.id === selectedItem.usuario_id)?.nome || 'Desconhecido',
-              },
-            }
-            : undefined
+
+        {
+          showHistory && historyId && (
+            <AuditLogModal
+              isOpen={showHistory}
+              onClose={() => {
+                setShowHistory(false);
+                setHistoryId(null);
+              }}
+              registroId={historyId}
+              useSimpleFetch={true}
+            />
+          )
         }
-      />
+      </div>
 
-      {
-        resolutionTransfer && (
-          <FuelingResolutionModal
-            isOpen={isResolutionOpen}
-            onClose={() => {
-              setIsResolutionOpen(false);
-              setResolutionTransfer(undefined);
-            }}
-            onResolve={handleResolveSuccess}
-            transfer={resolutionTransfer}
-            fazendas={fazendas}
-            postos={postos}
-          />
-        )
-      }
-
-      {
-        showHistory && historyId && (
-          <AuditLogModal
-            isOpen={showHistory}
-            onClose={() => {
-              setShowHistory(false);
-              setHistoryId(null);
-            }}
-            registroId={historyId}
-            useSimpleFetch={true}
-          />
-        )
-      }
 
       <VehicleManagementModal
         isOpen={isFleetModalOpen}

@@ -7,7 +7,14 @@ export type Modulo =
   | 'gestao_postos'
   | 'abast_lancar'
   | 'abast_conferir'
-  | 'sys_admin';
+  | 'sys_admin'
+  | 'gestao_recebimento'
+  | 'gestao_transferencias'
+  | 'gestao_limpeza'
+  | 'gestao_drenagem'
+  | 'gestao_auditoria'
+  | 'gestao_estoque'
+  | 'gestao_nfs';
 
 export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
 export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
@@ -16,6 +23,7 @@ export interface ModulePermission {
   view_scope: ViewScope;
   edit_scope: EditScope;
   can_confirm: boolean;
+  manage_notifications?: boolean;
   manage_fleet?: boolean;
   manage_roles?: boolean;
   can_ignore_nuntec?: boolean; // Permite ignorar pendências da Nuntec
@@ -131,10 +139,10 @@ export interface Posto {
 
 export interface NuntecMeasurement {
   id: string;
-  'operator-id': string;
-  'reservoir-id': string;
-  amount: number;
-  'measured-at': string;
+  'operator-id': string; // Required for Stock Pointing
+  'reservoir-id': string; // Required for Stock Pointing
+  amount: number; // Required for Stock Pointing
+  'measured-at': string; // Required for Stock Pointing
 }
 
 export interface NuntecReservoir {
@@ -293,4 +301,43 @@ export interface StockRequestItem {
 
   // Joins
   material?: Material;
+}
+
+// --- Módulo de Recebimento de Mercadorias (CD) ---
+
+export interface GoodsExit {
+  id: string;
+  sequential_id: number;
+  destination_farm_id: string;
+  driver_name: string;
+  exit_date: string; // ISO Date
+  created_by?: string;
+  observation?: string;
+  created_at: string;
+
+  // Joins
+  destination_farm?: { nome: string };
+  creator?: { nome: string };
+  items_count?: number; // Aggregated
+}
+
+export interface GoodsReceipt {
+  id: string;
+  receiver_id: string;
+  entry_at: string; // ISO Date
+  supplier: string;
+  destination_farm_id: string;
+  invoice_number: string;
+  order_number?: string;
+  exit_id?: string; // New FK
+  exit_at?: string; // ISO Date (Nullable) - Kept for legacy/redundancy
+  driver_name?: string; // Kept for legacy/redundancy
+  observation_entry?: string;
+  observation_exit?: string;
+  created_at: string;
+
+  // Joins
+  receiver?: { nome: string; email?: string };
+  destination_farm?: { nome: string };
+  exit?: GoodsExit;
 }

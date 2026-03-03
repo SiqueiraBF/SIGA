@@ -123,7 +123,7 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
 
   // --- Nuntec Sync Logic ---
   const handleSync = async () => {
-    if (!confirm('Isso buscará veículos novos da Nuntec. Veículos já existentes não serão alterados. Deseja continuar?')) return;
+    if (!confirm('Isso buscará veículos da Nuntec. Veículos existentes serão atualizados se houver mudanças. Deseja continuar?')) return;
 
     setImporting(true);
     try {
@@ -135,22 +135,49 @@ export function VehicleManagementModal({ isOpen, onClose }: VehicleManagementMod
         return;
       }
 
-      // 2. Identify NEW vehicles only (Safe Mode)
-      // We check against the currently loaded 'vehicles' state
-      const existingIds = new Set(vehicles.map(v => v.id));
-      const newVehicles = nuntecVehicles.filter(v => !existingIds.has(v.id));
+      console.log('Veículos da Nuntec:', nuntecVehicles);
 
-      if (newVehicles.length === 0) {
-        alert('Todos os veículos da Nuntec já estão cadastrados. Nenhuma alteração feita.');
+      // 2. Identify NEW and UPDATED vehicles
+      // Normalize IDs to string to avoid mismatches (DB might return int, Nuntec returns string)
+      const existingMap = new Map(vehicles.map(v => [String(v.id), v]));
+
+      const vehiclesToUpsert = nuntecVehicles.filter(nuntecVehicle => {
+        const nuntecId = String(nuntecVehicle.id);
+        const existing = existingMap.get(nuntecId);
+
+        // New vehicle
+        if (!existing) return true;
+
+        // Check for updates (Name or Status changed)
+        const nameChanged = existing.identificacao !== nuntecVehicle.identificacao;
+        const statusChanged = existing.ativo !== nuntecVehicle.ativo;
+
+        if (nuntecId === '510') {
+          console.log('Comparando ID 510:', {
+            existingName: existing.identificacao,
+            newName: nuntecVehicle.identificacao,
+            nameChanged,
+            existingStatus: existing.ativo,
+            newStatus: nuntecVehicle.ativo,
+            statusChanged,
+            isNew: false
+          });
+        }
+
+        return nameChanged || statusChanged;
+      });
+
+      if (vehiclesToUpsert.length === 0) {
+        alert('Todos os veículos estão sincronizados. Nenhuma alteração necessária.');
         return;
       }
 
-      console.log(`Sincronizando ${newVehicles.length} novos veículos...`);
+      console.log(`Sincronizando ${vehiclesToUpsert.length} veículos (novos ou alterados)...`);
 
-      // 3. Upsert Batch (Only new ones)
-      await vehicleService.upsertBatch(newVehicles);
+      // 3. Upsert Batch
+      await vehicleService.upsertBatch(vehiclesToUpsert);
 
-      alert(`Sincronização concluída! ${newVehicles.length} novos veículos adicionados.`);
+      alert(`Sincronização concluída! ${vehiclesToUpsert.length} veículos enviados para atualização.`);
       loadVehicles(); // Reload list
     } catch (error: any) {
       console.error(error);

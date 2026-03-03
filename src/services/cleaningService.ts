@@ -132,39 +132,68 @@ export const cleaningService = {
     },
 
     async getAllFarmsWeeklyStatus() {
-        // 1. Get all active farms
-        const { data: fazendas, error: fazendasError } = await supabase
+        // 1. Get Monitored Farms Config
+        const { data: configData } = await supabase
+            .from('system_parameters')
+            .select('value')
+            .eq('key', 'cleaning_monitored_farms')
+            .single();
+
+        let monitoredIds: string[] = [];
+        if (configData?.value) {
+            try {
+                monitoredIds = JSON.parse(configData.value);
+            } catch (e) {
+                console.error('Error parsing monitored farms:', e);
+            }
+        }
+
+        // 2. Get all active farms
+        let query = supabase
             .from('fazendas')
             .select('id, nome')
             .eq('ativo', true)
             .order('nome');
 
+        // If we have a list of monitored farms, strictly filter by it
+        // If no list is set (first time), maybe default to all? 
+        // For now, if list exists, use it.
+        if (monitoredIds.length > 0) {
+            query = query.in('id', monitoredIds);
+        }
+
+        const { data: fazendas, error: fazendasError } = await query;
         if (fazendasError) throw fazendasError;
         if (!fazendas) return [];
 
-        const today = new Date();
-        const start = startOfWeek(today, { weekStartsOn: 1 });
-        const end = endOfWeek(today, { weekStartsOn: 1 });
-        const startStr = format(start, 'yyyy-MM-dd');
-        const endStr = format(end, 'yyyy-MM-dd');
+        // 3. Get LAST cleaning registry for each type for these farms
+        // We want the LATEST date, regardless of if it's this week or not.
+        // Doing this efficiently for many farms is tricky in one query without a complex join.
+        // A simple approach: Get all recent cleanings (e.g. last 30 days) or just get all and process in memory if dataset is small.
+        // Better: Use a distinct on query if supported, or just fetch last cleaning for each farm.
 
-        // 2. Get all registries for this week
+        // Since we need "Last Date", let's fetch cleanings for these farms. 
+        // We optimize by fetching only necessary fields.
         const { data: registries, error: regError } = await supabase
             .from('cleaning_registries')
-            .select('fazenda_id, tipo')
-            .gte('data', startStr)
-            .lte('data', endStr);
+            .select('fazenda_id, tipo, data')
+            .in('fazenda_id', fazendas.map(f => f.id))
+            .order('data', { ascending: false });
 
         if (regError) throw regError;
 
-        // 3. Map status per farm
+        // 4. Map status per farm
         return fazendas.map(fazenda => {
             const farmRegistries = registries?.filter(r => r.fazenda_id === fazenda.id) || [];
+
+            const lastAlmoxarifado = farmRegistries.find(r => r.tipo === 'ALMOXARIFADO');
+            const lastPosto = farmRegistries.find(r => r.tipo === 'POSTO');
+
             return {
                 id: fazenda.id,
                 nome: fazenda.nome,
-                almoxarifado: farmRegistries.some(r => r.tipo === 'ALMOXARIFADO'),
-                posto: farmRegistries.some(r => r.tipo === 'POSTO')
+                almoxarifadoDate: lastAlmoxarifado ? lastAlmoxarifado.data : null, // New field
+                postoDate: lastPosto ? lastPosto.data : null // New field
             };
         });
     }

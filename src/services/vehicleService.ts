@@ -41,12 +41,13 @@ export const vehicleService = {
         updated_at: new Date().toISOString(),
       }));
 
-      const { error } = await supabase.from('veiculos').upsert(chunk, { onConflict: 'id' });
+      const { data, error } = await supabase.from('veiculos').upsert(chunk, { onConflict: 'id' }).select();
 
       if (error) {
         console.error(`Erro ao importar lote ${i}:`, error);
         throw error;
       }
+      console.log(`Lote ${i / CHUNK_SIZE + 1} processado. ${data?.length} registros retornados.`);
     }
   },
 

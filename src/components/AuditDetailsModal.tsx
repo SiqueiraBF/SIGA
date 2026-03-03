@@ -55,30 +55,35 @@ export function AuditDetailsModal({ isOpen, onClose, data }: AuditDetailsModalPr
                         "p-4 rounded-xl border flex items-center gap-4",
                         isNonConforming ? "bg-red-50 border-red-200 text-red-800" :
                             data.status === 'MISSING_ANALYSIS' ? "bg-amber-50 border-amber-200 text-amber-800" :
-                                "bg-green-50 border-green-200 text-green-800"
+                                data.status === 'MISSING_ENTRY' ? "bg-blue-50 border-blue-200 text-blue-800" :
+                                    "bg-green-50 border-green-200 text-green-800"
                     )}>
                         <div className={clsx(
                             "p-3 rounded-full",
                             isNonConforming ? "bg-red-100" :
                                 data.status === 'MISSING_ANALYSIS' ? "bg-amber-100" :
-                                    "bg-green-100"
+                                    data.status === 'MISSING_ENTRY' ? "bg-blue-100" :
+                                        "bg-green-100"
                         )}>
                             {isNonConforming ? <XCircle size={24} /> :
                                 data.status === 'MISSING_ANALYSIS' ? <AlertTriangle size={24} /> :
-                                    <CheckCircle size={24} />
+                                    data.status === 'MISSING_ENTRY' ? <FileText size={24} /> :
+                                        <CheckCircle size={24} />
                             }
                         </div>
                         <div>
                             <h3 className="font-bold text-lg">
                                 {isNonConforming ? "Não Conforme" :
                                     data.status === 'MISSING_ANALYSIS' ? "Análise Pendente" :
-                                        "Conforme"
+                                        data.status === 'MISSING_ENTRY' ? "Entrada Pendente" :
+                                            "Conforme"
                                 }
                             </h3>
                             <p className="text-sm opacity-90">
                                 {isNonConforming ? "Divergência de volume ou qualidade fora dos padrões." :
                                     data.status === 'MISSING_ANALYSIS' ? "Aguardando lançamento da análise técnica." :
-                                        "Recebimento dentro dos padrões esperados."
+                                        data.status === 'MISSING_ENTRY' ? "Análise recebida sem nota fiscal de entrada vinculada." :
+                                            "Recebimento dentro dos padrões esperados."
                                 }
                             </p>
                         </div>
@@ -87,6 +92,7 @@ export function AuditDetailsModal({ isOpen, onClose, data }: AuditDetailsModalPr
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
                         {/* Left: Invoice Data */}
+                        {/* Lift: Invoice Data */}
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
                             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
                                 <Truck className="text-slate-400" size={18} />
@@ -100,16 +106,22 @@ export function AuditDetailsModal({ isOpen, onClose, data }: AuditDetailsModalPr
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-xs font-semibold text-slate-400 uppercase">Nota Fiscal</label>
+                                        <label className="text-xs font-semibold text-slate-400 uppercase">Nota Fiscal (Análise)</label>
                                         <p className="text-slate-800 font-medium">{data.invoiceNumber}</p>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-semibold text-slate-400 uppercase">Volume NF</label>
+                                        <label className="text-xs font-semibold text-slate-400 uppercase">Volume Total NF</label>
                                         <p className="text-slate-800 font-medium">{data.volume.toLocaleString('pt-BR')} L</p>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-semibold text-slate-400 uppercase">ID Entrada</label>
-                                        <p className="text-slate-600 text-sm">{data.id || '-'}</p>
+                                        <label className="text-xs font-semibold text-slate-400 uppercase">ID (Entrada)</label>
+                                        <p className="text-slate-600 text-sm">
+                                            {data.groupedSupplies && data.groupedSupplies.length > 1
+                                                ? 'Múltiplos'
+                                                : data.groupedSupplies && data.groupedSupplies.length === 1
+                                                    ? data.groupedSupplies[0].id
+                                                    : data.id || '-'}
+                                        </p>
                                     </div>
                                     <div>
                                         <label className="text-xs font-semibold text-slate-400 uppercase">Data/Hora Emissão</label>
@@ -118,6 +130,39 @@ export function AuditDetailsModal({ isOpen, onClose, data }: AuditDetailsModalPr
                                         </p>
                                     </div>
                                 </div>
+
+                                {/* Grouped Supplies Breakdown */}
+                                {data.groupedSupplies && data.groupedSupplies.length > 0 && (
+                                    <div className="mt-4 pt-3 border-t border-slate-100">
+                                        <label className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1 mb-2">
+                                            Composição do Volume ({data.groupedSupplies.length} itens)
+                                        </label>
+                                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="bg-slate-100 text-slate-500 font-medium">
+                                                    <tr>
+                                                        <th className="px-3 py-2">ID</th>
+                                                        <th className="px-3 py-2">NF</th>
+                                                        <th className="px-3 py-2 text-right">Vol (L)</th>
+                                                        <th className="px-3 py-2 text-right">Data</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {data.groupedSupplies.map((supply, idx) => (
+                                                        <tr key={`${supply.id}-${idx}`}>
+                                                            <td className="px-3 py-2 font-mono text-xs text-slate-500">{supply.id}</td>
+                                                            <td className="px-3 py-2 font-medium text-slate-700">{supply.invoiceNumber}</td>
+                                                            <td className="px-3 py-2 text-right">{supply.volume.toLocaleString('pt-BR')}</td>
+                                                            <td className="px-3 py-2 text-right text-slate-500">
+                                                                {supply.date ? format(parseISO(supply.date), 'dd/MM HH:mm') : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

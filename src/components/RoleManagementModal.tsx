@@ -9,6 +9,9 @@ import {
   Plus,
   Settings,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Edit3,
   UserCog,
   Search,
   LayoutGrid,
@@ -30,6 +33,7 @@ const CONFIGURABLE_MODULES: {
   supportsRoleManagement?: boolean;
   supportsManualFueling?: boolean;
   supportsIgnoreNuntec?: boolean;
+  supportsNotifications?: boolean;
 }[] = [
     {
       key: 'gestao_combustivel',
@@ -72,6 +76,60 @@ const CONFIGURABLE_MODULES: {
       supportsConfirm: false,
       simpleEdit: true,
     },
+    {
+      key: 'gestao_recebimento',
+      label: 'Central de Distribuição',
+      description: 'Expedição e Recebimento de mercadorias',
+      supportsConfirm: false,
+      supportsNotifications: true,
+    },
+    {
+      key: 'gestao_transferencias',
+      label: 'Transferências de Estoque',
+      description: 'Movimentações entre unidades/comboios',
+      supportsConfirm: true,
+      confirmLabel: 'Separar Transferência',
+      confirmDescription: 'Permite gerenciar a separação de itens',
+      supportsNotifications: true,
+    },
+    {
+      key: 'gestao_limpeza',
+      label: 'Limpeza e Organização',
+      description: 'Manutenção e auditoria de limpeza',
+      supportsConfirm: false,
+      simpleEdit: true,
+      supportsNotifications: true,
+    },
+    {
+      key: 'gestao_drenagem',
+      label: 'Drenagem de Postos',
+      description: 'Drenagem e descarte',
+      supportsConfirm: false,
+      simpleEdit: true,
+      supportsNotifications: true,
+    },
+    {
+      key: 'gestao_auditoria',
+      label: 'Auditorias Fiscais e Medições',
+      description: 'Auditoria de notas e reconciliação (Acesso Restrito)',
+      supportsConfirm: false,
+      simpleEdit: true,
+    },
+    {
+      key: 'gestao_estoque',
+      label: 'Gestão de Estoque',
+      description: 'Visualização e carga do estoque da Matriz',
+      supportsConfirm: false,
+      simpleEdit: true,
+    },
+    {
+      key: 'gestao_nfs',
+      label: 'Painel de NFs',
+      description: 'Gestão de Notas Fiscais pendentes e conciliadas',
+      supportsConfirm: false,
+      simpleEdit: true,
+      supportsNotifications: true,
+    },
   ];
 
 export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -83,6 +141,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
   // Create Role State
   const [isCreating, setIsCreating] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
+  const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (isOpen) {
@@ -117,6 +176,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
     setLoading(true);
     try {
       const newRole = await roleService.create({
+        id: crypto.randomUUID(),
         nome: newRoleName,
         modulos_permitidos: [],
         permissoes: {},
@@ -200,6 +260,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
     setSavingId(role.id);
     try {
       await roleService.update(role.id, {
+        nome: role.nome,
         modulos_permitidos: role.modulos_permitidos,
         permissoes: role.permissoes,
       });
@@ -239,8 +300,8 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     key={role.id}
                     onClick={() => setSelectedRoleId(role.id)}
                     className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between group ${selectedRoleId === role.id
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-md'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:shadow-sm'
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:shadow-sm'
                       }`}
                   >
                     <span className="font-semibold">{role.nome}</span>
@@ -298,7 +359,18 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 <div>
                   <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <UserCog className="text-slate-400" size={20} />
-                    {selectedRole.nome}
+                    <div className="relative flex items-center group">
+                      <input
+                        type="text"
+                        value={selectedRole.nome}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRoles((prev) => prev.map(r => r.id === selectedRole.id ? { ...r, nome: val } : r));
+                        }}
+                        className="font-bold text-lg text-slate-800 bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-blue-500 focus:ring-0 px-1 py-0.5 outline-none transition-colors max-w-[200px]"
+                      />
+                      <Edit3 size={14} className="text-slate-400 absolute right-[-20px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                    </div>
                   </h3>
                   <p className="text-xs text-slate-400">
                     Configure os módulos e permissões deste perfil.
@@ -348,19 +420,28 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                               >
                                 <Settings size={20} />
                               </div>
-                              <div>
+                              <div
+                                className={`${isLinked ? 'cursor-pointer group' : ''}`}
+                                onClick={() => {
+                                  if (isLinked) setCollapsedModules(prev => ({ ...prev, [mod.key]: !prev[mod.key] }))
+                                }}
+                              >
                                 <h5
-                                  className={`font-bold transition-colors ${isLinked ? 'text-slate-800' : 'text-slate-500'}`}
+                                  className={`font-bold transition-colors flex items-center gap-2 ${isLinked ? 'text-slate-800 group-hover:text-blue-600' : 'text-slate-500'}`}
                                 >
                                   {mod.label}
+                                  {isLinked && (
+                                    collapsedModules[mod.key] ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronUp size={14} className="text-slate-400" />
+                                  )}
                                 </h5>
                                 <p className="text-xs text-slate-400">{mod.description}</p>
                               </div>
                             </div>
                             <button
-                              onClick={() =>
-                                handleToggleModuleLink(selectedRole.id, mod.key, !isLinked)
-                              }
+                              onClick={() => {
+                                handleToggleModuleLink(selectedRole.id, mod.key, !isLinked);
+                                if (!isLinked) setCollapsedModules(prev => ({ ...prev, [mod.key]: false }));
+                              }}
                               className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${isLinked ? 'bg-blue-600' : 'bg-slate-300'}`}
                             >
                               <span
@@ -370,7 +451,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                           </div>
 
                           {/* Permissions Details (Only if Linked) */}
-                          {isLinked && (
+                          {isLinked && !collapsedModules[mod.key] && (
                             <div className="px-4 pb-4 pt-0 animate-in slide-in-from-top-2 duration-200">
                               <div className="border-t border-slate-100 pt-4 grid grid-cols-1 xl:grid-cols-3 gap-6">
                                 {/* VISUALIZAÇÃO */}
@@ -380,7 +461,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       Visualização
                                     </label>
                                     <select
-                                      value={perms.view_scope}
+                                      value={mod.key === 'gestao_estoque' ? 'ALL' : perms.view_scope}
                                       onChange={(e) =>
                                         handlePermissionChange(
                                           selectedRole.id,
@@ -389,11 +470,18 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                           e.target.value,
                                         )
                                       }
-                                      className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
+                                      disabled={mod.key === 'gestao_estoque'}
+                                      className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
                                     >
                                       <option value="ALL">👀 Todos</option>
-                                      <option value="SAME_FARM">🏠 Mesma Fazenda</option>
-                                      <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                      {mod.key !== 'gestao_estoque' && (
+                                        <>
+                                          <option value="SAME_FARM">🏠 Mesma Fazenda</option>
+                                          {mod.key !== 'gestao_postos' && (
+                                            <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                          )}
+                                        </>
+                                      )}
                                     </select>
                                   </div>
                                 )}
@@ -422,6 +510,11 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                           📝 Solicitante (Rascunhos)
                                         </option>
                                         <option value="ALL">🛠️ Gerenciamento Completo</option>
+                                      </>
+                                    ) : (mod.key === 'gestao_transferencias' || mod.key === 'gestao_recebimento') ? (
+                                      <>
+                                        <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                        <option value="ALL">🛠️ Gerenciamento Total</option>
                                       </>
                                     ) : mod.simpleEdit ? (
                                       <option value="ALL">🛠️ Gerenciamento Total</option>
@@ -498,6 +591,39 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                         </span>
                                         <span className="text-[10px] text-slate-400 leading-tight">
                                           Importar/Editar Veículos
+                                        </span>
+                                      </div>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {mod.supportsNotifications && (
+                                  <div className="flex items-end pb-1">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 w-full transition-colors">
+                                      <div
+                                        className={`w-5 h-5 rounded border flex items-center justify-center ${perms.manage_notifications ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-slate-300'}`}
+                                      >
+                                        {perms.manage_notifications && <Check size={14} />}
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={!!perms.manage_notifications}
+                                        onChange={(e) =>
+                                          handlePermissionChange(
+                                            selectedRole.id,
+                                            mod.key,
+                                            'manage_notifications',
+                                            e.target.checked,
+                                          )
+                                        }
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-slate-700">
+                                          {mod.key === 'gestao_limpeza' ? 'Configurar E-mails e Fazendas' : (mod.key === 'gestao_drenagem' ? 'Notificações de Drenagem' : (mod.key === 'gestao_recebimento' ? 'Notificações de Recebimento' : (mod.key === 'gestao_nfs' ? 'Notificações de NFs' : 'Notificações de Estoque')))}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 leading-tight">
+                                          Recebe/Configura E-mails
                                         </span>
                                       </div>
                                     </label>

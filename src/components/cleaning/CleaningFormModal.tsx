@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Upload, Trash2, Calendar, AlertCircle } from 'lucide-react';
+import { X, Save, Upload, Trash2, AlertCircle } from 'lucide-react';
 import { cleaningService, CleaningRegistry } from '../../services/cleaningService';
 import { notificationService } from '../../services/notificationService';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +23,32 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
     const [observacoes, setObservacoes] = useState('');
     const [photos, setPhotos] = useState<File[]>([]);
     const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+
+        if (e.dataTransfer.files) {
+            const newFiles = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+
+            if (newFiles.length > 0) {
+                setPhotos(prev => [...prev, ...newFiles]);
+                const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+                setPhotoPreviews(prev => [...prev, ...newPreviews]);
+            }
+        }
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -33,20 +59,28 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
             setPhotos([]);
             setPhotoPreviews([]);
 
+            // Always load all farms to allow selection
+            loadFazendas();
+
             if (user?.fazenda_id) {
                 setFazendaId(user.fazenda_id);
             } else {
-                loadFazendas();
                 setFazendaId('');
             }
         }
     }, [isOpen, user]);
 
-    async function loadFazendas() {
+    async function loadFazendas(specificId?: string) {
         try {
-            const { data } = await import('../../lib/supabase').then(async ({ supabase }) =>
-                await supabase.from('fazendas').select('id, nome').eq('ativo', true).order('nome')
-            );
+            const query = import('../../lib/supabase').then(async ({ supabase }) => {
+                let q = supabase.from('fazendas').select('id, nome').eq('ativo', true).order('nome');
+                if (specificId) {
+                    q = q.eq('id', specificId);
+                }
+                return await q;
+            });
+
+            const { data } = await query;
             if (data) setFazendas(data);
         } catch (error) {
             console.error('Erro ao carregar fazendas:', error);
@@ -100,7 +134,7 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
             }
 
             // 1. Create Database Record (Uploads photos to Storage)
-            await cleaningService.createCleaning({
+            const newRegistry = await cleaningService.createCleaning({
                 fazenda_id: finalFazendaId,
                 usuario_id: user.id,
                 data: data,
@@ -108,16 +142,17 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
                 observacoes: observacoes
             }, photos);
 
-            // 2. Send Email (Uses local photos for low egress)
-            // Warning: We are not waiting for email to complete to unblock UI, but we could.
-            // Let's await it to show error if any, since it's important.
-            const emailSent = await notificationService.sendCleaningReport({
-                fazendaNome: fazendaNome || 'Fazenda Desconhecida',
-                usuarioNome: user.nome,
-                tipo: tipo,
-                data: data,
-                observacoes: observacoes
-            }, photos, user.email);
+            // 2. Send Email (Uses public URLs from newRegistry)
+            const emailSent = await notificationService.sendCleaningReport(
+                fazendaNome || 'Fazenda Desconhecida',
+                tipo,
+                user.nome,
+                observacoes,
+                newRegistry.fotos || [], // Pass URLs (still used for potential logging or legacy, though HTML ignores them now)
+                finalFazendaId,
+                user.email,
+                photos // Pass File objects for attachment
+            );
 
             if (!emailSent) {
                 alert('Registro salvo com sucesso, mas houve um erro ao enviar o e-mail automático. Verifique as configurações.');
@@ -139,131 +174,184 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
-                    <h2 className="text-xl font-bold text-slate-800">Registrar Limpeza</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-                        <X size={24} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans">
+
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800">Registrar Limpeza</h2>
+                        <p className="text-xs text-slate-400 font-medium">Preencha os dados e anexe as evidências</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors">
+                        <X size={20} />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* Body - Split View */}
+                <div className="flex-1 flex overflow-hidden">
 
-                    {/* Info Card */}
-                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg flex gap-3 text-blue-800 text-sm">
-                        <Calendar className="shrink-0" size={20} />
-                        <div>
-                            <p className="font-bold">Lembrete de Agenda:</p>
-                            <ul className="list-disc list-inside mt-1 space-y-1">
-                                <li><strong>Segunda-feira:</strong> Almoxarifado</li>
-                                <li><strong>Sexta-feira:</strong> Posto de Abastecimento</li>
-                            </ul>
-                        </div>
-                    </div>
+                    {/* Sidebar - Context Data */}
+                    <div className="w-[340px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
+                        <div className="p-6 space-y-5">
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                                <AlertCircle size={12} /> Contexto
+                            </div>
 
-                    {/* Farm Select (Only if user has no farm) */}
-                    {!user?.fazenda_id && (
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Fazenda *</label>
-                            <select
-                                value={fazendaId}
-                                onChange={(e) => setFazendaId(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                required
-                            >
-                                <option value="">Selecione a Fazenda...</option>
-                                {fazendas.map(f => (
-                                    <option key={f.id} value={f.id}>{f.nome}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Setor *</label>
-                        <select
-                            value={tipo}
-                            onChange={(e) => setTipo(e.target.value as any)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        >
-                            <option value="ALMOXARIFADO">Almoxarifado</option>
-                            <option value="POSTO">Posto de Abastecimento</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Data *</label>
-                        <input
-                            type="date"
-                            required
-                            value={data}
-                            onChange={(e) => setData(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Observações</label>
-                        <textarea
-                            value={observacoes}
-                            onChange={(e) => setObservacoes(e.target.value)}
-                            rows={3}
-                            placeholder="Alguma observação sobre as condições do local?"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Fotos *</label>
-                        <div className="grid grid-cols-3 gap-3">
-                            {photoPreviews.map((src, idx) => (
-                                <div key={idx} className="relative aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200 group">
-                                    <img src={src} alt="Preview" className="w-full h-full object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => removePhoto(idx)}
-                                        className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
-
-                            <label className="flex flex-col items-center justify-center aspect-square border-2 border-dashed border-slate-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors cursor-pointer group">
-                                <Upload size={24} className="text-slate-400 group-hover:text-blue-500 mb-1" />
-                                <span className="text-xs text-slate-500 group-hover:text-blue-600 font-medium">Adicionar</span>
+                            {/* Data */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Data *</label>
                                 <input
-                                    type="file"
-                                    multiple
-                                    accept="image/*"
-                                    onChange={handlePhotoSelect}
-                                    className="hidden"
+                                    type="date"
+                                    required
+                                    value={data}
+                                    onChange={(e) => setData(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
-                            </label>
+                            </div>
+
+                            {/* Usuário (Travado) */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Responsável</label>
+                                <input
+                                    type="text"
+                                    value={user?.nome || ''}
+                                    disabled
+                                    className="w-full px-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-500 text-sm font-medium select-none"
+                                />
+                            </div>
+
+                            {/* Fazenda */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Filial *</label>
+                                <select
+                                    value={fazendaId}
+                                    onChange={(e) => setFazendaId(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    required
+                                >
+                                    <option value="">Selecione a Filial...</option>
+                                    {fazendas.map(f => (
+                                        <option key={f.id} value={f.id}>{f.nome}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Setor */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Setor *</label>
+                                <select
+                                    value={tipo}
+                                    onChange={(e) => setTipo(e.target.value as any)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                >
+                                    <option value="ALMOXARIFADO">Almoxarifado</option>
+                                    <option value="POSTO">Posto de Abastecimento</option>
+                                </select>
+                            </div>
+
+                            {/* Observações */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Observações</label>
+                                <textarea
+                                    value={observacoes}
+                                    onChange={(e) => setObservacoes(e.target.value)}
+                                    rows={5}
+                                    placeholder="Descreva as condições do local ou observações relevantes..."
+                                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 resize-none"
+                                />
+                            </div>
                         </div>
-                        <p className="text-xs text-slate-400 mt-2">Dica: Selecione várias fotos de uma vez.</p>
                     </div>
 
-                    <div className="pt-2 flex justify-end gap-3">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                            disabled={submitting}
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={submitting}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
-                        >
-                            {submitting ? 'Salvando...' : <><Save size={18} /> Salvar Registro</>}
-                        </button>
-                    </div>
+                    {/* Main Content - Photos */}
+                    <div className="flex-1 flex flex-col bg-slate-50/50 relative overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-8">
+                            <div className="max-w-3xl mx-auto">
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                                        <Upload size={20} className="text-blue-500" />
+                                        Evidências Fotográficas
+                                    </h3>
+                                    <p className="text-sm text-slate-500 mt-1">
+                                        É obrigatório anexar fotos que comprovem a realização da limpeza e organização.
+                                    </p>
+                                </div>
 
-                </form>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {photoPreviews.map((src, idx) => (
+                                        <div key={idx} className="relative aspect-square bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 group group-hover:shadow-md transition-all">
+                                            <img src={src} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removePhoto(idx)}
+                                                    className="bg-white text-red-500 p-2 rounded-full shadow-lg hover:bg-red-50 hover:text-red-600 transform scale-90 group-hover:scale-100 transition-all"
+                                                    title="Remover foto"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <label
+                                        className={`flex flex-col items-center justify-center aspect-square bg-white border-2 border-dashed rounded-xl transition-all cursor-pointer group ${isDragging ? 'border-blue-500 bg-blue-50/50' : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50/50'}`}
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                    >
+                                        <div className={`p-3 rounded-full transition-colors mb-2 ${isDragging ? 'bg-blue-100' : 'bg-slate-50 group-hover:bg-blue-100'}`}>
+                                            <Upload size={24} className={`${isDragging ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-600'}`} />
+                                        </div>
+                                        <span className={`text-sm font-medium ${isDragging ? 'text-blue-700' : 'text-slate-600 group-hover:text-blue-700'}`}>
+                                            {isDragging ? 'Solte para adicionar' : 'Adicionar Foto'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 mt-1">JPG, PNG</span>
+                                        <input
+                                            type="file"
+                                            multiple
+                                            accept="image/*"
+                                            onChange={handlePhotoSelect}
+                                            className="hidden"
+                                        />
+                                    </label>
+
+                                </div>
+                                <p className="text-xs text-slate-400 mt-4 text-center">
+                                    Dica: Selecione várias fotos de uma vez ao abrir a galeria.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-6 py-2.5 text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-lg font-medium text-sm transition-colors"
+                        disabled={submitting}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={submitting}
+                        className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 shadow-sm shadow-blue-200 transition-all active:scale-[0.98]"
+                    >
+                        {submitting ? (
+                            <>
+                                <span className="animate-spin w-4 h-4 border-2 border-white/20 border-t-white rounded-full"></span>
+                                Salvando...
+                            </>
+                        ) : (
+                            <><Save size={18} /> Salvar Registro</>
+                        )}
+                    </button>
+                </div>
             </div>
         </div>
     );

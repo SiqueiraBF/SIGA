@@ -654,22 +654,29 @@ export const notificationService = {
   ) {
     try {
       // 1. Configurações
+      const keyTo = fazendaId ? `email_limpeza_to_${fazendaId}` : 'email_limpeza_to';
+      const keyCc = fazendaId ? `email_limpeza_cc_${fazendaId}` : 'email_limpeza_cc';
+
       const settings = await import('./systemService').then((m) =>
-        m.systemService.getParameters(['email_limpeza_to', 'email_limpeza_cc']),
+        m.systemService.getParameters([keyTo, keyCc, 'email_limpeza_to', 'email_limpeza_cc']),
       );
+
+      const rawTo = settings[keyTo] || settings['email_limpeza_to'];
+      const rawCc = settings[keyCc] || settings['email_limpeza_cc'];
+
       const to =
-        settings['email_limpeza_to']
+        rawTo
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
       const cc =
-        settings['email_limpeza_cc']
+        rawCc
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
 
       if (to.length === 0) {
-        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para limpeza (email_limpeza_to).');
+        console.warn(`[NOTIFICATION] Nenhum e-mail de destino configurado para limpeza (usando config: ${keyTo} ou email_limpeza_to).`);
         return false;
       }
 
@@ -677,24 +684,22 @@ export const notificationService = {
       const dateStr = new Date().toLocaleDateString('pt-BR'); // Fix timezone offset for display
 
       const htmlBody = `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #059669;">Registro de Limpeza e Organização</h2>
+        <div style="font-family: Arial, sans-serif; color: #333; background-color: #ffffff; line-height: 1.5; max-width: 800px;">
+          <h1 style="color: #333; font-size: 20px; font-weight: bold; margin-bottom: 5px;">Relatório de Limpeza e Organização - ${tipo}</h1>
+          <p style="margin-top: 5px; margin-bottom: 40px; color: #333;"><strong>Data:</strong> ${dateStr}</p>
+          
+          <p style="color: #333;">Informamos que a rotina de limpeza e organização do setor foi realizada conforme o cronograma estabelecido.</p>
 
-          <div style="background-color: #ecfdf5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d1fae5;">
-            <p><strong>Fazenda:</strong> ${fazendaNome}</p>
-            <p><strong>Setor:</strong> ${tipo}</p>
-            <p><strong>Responsável:</strong> ${usuarioNome}</p>
-            <p><strong>Data de Referência:</strong> ${dateStr}</p>
-          </div>
-
-          <p><strong>Observações:</strong><br/>
-            ${observacoes || 'Nenhuma observação registrada.'}
+          <p style="color: #333; margin-top: 20px;">
+            <strong>Observações:</strong> ${(observacoes || 'NENHUMA OBSERVAÇÃO REGISTRADA.').toUpperCase()}
           </p>
 
-          <br/>
-          <p style="font-size: 12px; color: #666;">
-            * As fotos do registro seguem em anexo.<br/>
-            Enviado automaticamente pelo Sistema SIGA.
+          <p style="font-size: 12px; color: #a5b4fc; margin-top: 20px; margin-bottom: 40px;">
+            * As fotos do registro seguem em anexo.
+          </p>
+
+          <p style="font-size: 13px; color: #333; font-style: italic; margin-top: 50px;">
+            Enviado pelo Sistema SIGA - Sistema Integrado de Gestão de Almoxarifado
           </p>
         </div>
       `;

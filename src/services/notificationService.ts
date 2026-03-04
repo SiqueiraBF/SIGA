@@ -138,51 +138,78 @@ export const notificationService = {
 
   async sendGoodsReceiptReport(receipt: any, senderEmail?: string) {
     try {
+      const fazendaId = receipt.destination_farm_id || receipt.destination_farm?.id;
+      const keyTo = fazendaId ? `email_entrada_to_${fazendaId}` : 'email_entrada_to';
+      const keyCc = fazendaId ? `email_entrada_cc_${fazendaId}` : 'email_entrada_cc';
+
       const settings = await import('./systemService').then((m) =>
-        m.systemService.getParameters(['email_cd_to', 'email_cd_cc']),
+        m.systemService.getParameters([keyTo, keyCc, 'email_entrada_to', 'email_entrada_cc']),
       );
+
+      const rawTo = settings[keyTo] || settings['email_entrada_to'];
+      const rawCc = settings[keyCc] || settings['email_entrada_cc'];
+
       const to =
-        settings['email_cd_to']
+        rawTo
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
       const cc =
-        settings['email_cd_cc']
+        rawCc
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
 
       if (to.length === 0) {
-        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para CD (email_cd_to).');
+        console.warn(`[NOTIFICATION] Nenhum e-mail de destino configurado para CD (${keyTo} ou email_entrada_to).`);
         return false;
       }
 
       const dateStr = new Date(receipt.entry_at).toLocaleString('pt-BR');
 
       const htmlBody = `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #2563eb;">Novo Recebimento de Mercadoria</h2>
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto;">
+          <h2>Novo Recebimento de Mercadoria - ${receipt.destination_farm?.nome || 'Fazenda'}</h2>
           
-          <div style="background-color: #eff6ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #bfdbfe;">
-            <p><strong>Fazenda Destino:</strong> ${receipt.destination_farm?.nome || 'Não informada'}</p>
-            <p><strong>Fornecedor:</strong> ${receipt.supplier}</p>
-            <p><strong>Nota Fiscal:</strong> ${receipt.invoice_number}</p>
-            ${receipt.order_number ? `<p><strong>Pedido:</strong> ${receipt.order_number}</p>` : ''}
-            <p><strong>Recebedor:</strong> ${receipt.receiver?.nome || 'Não informado'}</p>
-            <p><strong>Data de Entrada:</strong> ${dateStr}</p>
-          </div>
+          <p><strong>Data:</strong> ${dateStr}</p>
+          <p>Informamos que um novo recebimento de mercadoria foi registrado no sistema com os seguintes detalhes:</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; border: 1px solid #f3f4f6;">
+            <tbody>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; width: 30%; color: #6b7280; font-weight: bold;">Fornecedor:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827; font-weight: bold;">${receipt.supplier}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Nota Fiscal:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${receipt.invoice_number}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Pedido:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #2563eb; font-weight: bold;">${receipt.order_number || '-'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Fazenda Destino:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${receipt.destination_farm?.nome || '-'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Recebido por:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${receipt.receiver?.nome || '-'}</td>
+              </tr>
+            </tbody>
+          </table>
 
           ${receipt.observation_entry
           ? `
-          <p><strong>Observações:</strong><br/>
-            ${receipt.observation_entry}
-          </p>`
+          <div style="margin-top: 20px;">
+            <p><strong>Observações:</strong></p>
+            <p style="padding: 16px; border: 1px solid #f3f4f6; border-radius: 4px;">${receipt.observation_entry}</p>
+          </div>`
           : ''
         }
-
           <br/>
-          <p style="font-size: 12px; color: #666;">
-            Enviado automaticamente pelo Sistema SIGA.
+          <p style="text-align: center; font-size: 11px; color: #9ca3af; margin-top: 30px; font-style: italic;">
+            Enviado pelo Sistema SIGA - Sistema Integrado de Gestão de Almoxarifado
           </p>
         </div>
       `;
@@ -199,7 +226,7 @@ export const notificationService = {
         body: JSON.stringify({
           to,
           cc,
-          subject: `[Entrada CD] NF: ${receipt.invoice_number} - ${receipt.supplier}`,
+          subject: `[Entrada CD] ${receipt.supplier} - NF ${receipt.invoice_number} - ${receipt.destination_farm?.nome || 'Sem Destino'}`,
           html: htmlBody,
           htmlBody: htmlBody,
           fromEmail: senderEmail,
@@ -220,22 +247,31 @@ export const notificationService = {
 
   async sendGoodsExitReport(exit: any, items: any[], senderEmail?: string) {
     try {
+      const fazendaId = exit.farm_id || exit.farm?.id;
+      // Usuário solicitou que os e-mails de Saída vão para os mesmos destinatários da Entrada
+      const keyTo = fazendaId ? `email_entrada_to_${fazendaId}` : 'email_entrada_to';
+      const keyCc = fazendaId ? `email_entrada_cc_${fazendaId}` : 'email_entrada_cc';
+
       const settings = await import('./systemService').then((m) =>
-        m.systemService.getParameters(['email_cd_to', 'email_cd_cc']),
+        m.systemService.getParameters([keyTo, keyCc, 'email_entrada_to', 'email_entrada_cc']),
       );
+
+      const rawTo = settings[keyTo] || settings['email_entrada_to'];
+      const rawCc = settings[keyCc] || settings['email_entrada_cc'];
+
       const to =
-        settings['email_cd_to']
+        rawTo
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
       const cc =
-        settings['email_cd_cc']
+        rawCc
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
 
       if (to.length === 0) {
-        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para CD (email_cd_to).');
+        console.warn(`[NOTIFICATION] Nenhum e-mail de destino configurado para Expedição (usando config: ${keyTo} ou email_entrada_to).`);
         return false;
       }
 
@@ -243,40 +279,63 @@ export const notificationService = {
 
       const itemsHtml = items
         .map(
-          (item) => `
+          (item) => {
+            const rowDate = item.entry_at || item.entry_date ? new Date(item.entry_at || item.entry_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+            return `
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.invoice_number}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.supplier}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #1f2937;">${item.supplier || '-'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #111827; font-weight: bold;">${item.invoice_number || '-'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #1f2937;">${item.order_number || '-'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b;">${rowDate}</td>
         </tr>
-      `,
+      `;
+          }
         )
         .join('');
 
       const htmlBody = `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #059669;">Nova Saída de Mercadoria (Expedição)</h2>
+        <div style="font-family: Arial, sans-serif; color: #111827; max-width: 900px; margin: 0 auto;">
           
-          <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #bbf7d0;">
-            <p><strong>Fazenda Destino:</strong> ${exit.destination_farm?.nome || 'Não informada'}</p>
-            <p><strong>Motorista / Portador:</strong> ${exit.driver_name}</p>
-            <p><strong>Data de Saída:</strong> ${dateStr}</p>
-            <p><strong>Registrado por:</strong> ${exit.creator?.nome || 'Sistema'}</p>
-          </div>
+          <p style="margin-bottom: 20px; font-size: 15px;">Informamos que uma nova expedição de mercadorias foi registrada com os seguintes detalhes:</p>
+
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; border: 1px solid #f3f4f6;">
+            <tbody>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; width: 30%; color: #6b7280; font-weight: bold;">Motorista / Portador:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827; font-weight: bold;">${exit.driver_name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Fazenda Destino:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${exit.destination_farm?.nome || '-'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Registrado por:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${exit.creator?.nome || 'Sistema'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #6b7280; font-weight: bold;">Total de Notas:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827; font-weight: bold;">${items.length}</td>
+              </tr>
+            </tbody>
+          </table>
 
           ${exit.observation
           ? `
-          <p><strong>Observações:</strong><br/>
-            ${exit.observation}
-          </p>`
+          <div style="margin-top: 20px;">
+            <p><strong>Observações:</strong></p>
+            <p style="padding: 16px; border: 1px solid #f3f4f6; border-radius: 4px;">${exit.observation}</p>
+          </div>`
           : ''
         }
 
-          <h3>Notas Fiscais Despachadas (${items.length})</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
-            <thead style="background-color: #f8fafc;">
+          <h3 style="font-size: 16px; color: #1f2937; margin-top: 40px; margin-bottom: 10px;">Relação de Notas / Mercadorias</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead style="background-color: #f8fafc; color: #4b5563; text-align: left;">
               <tr>
-                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Nota Fiscal</th>
-                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Fornecedor</th>
+                <th style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Fornecedor</th>
+                <th style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">NF</th>
+                <th style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Pedido</th>
+                <th style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Data Entrada</th>
               </tr>
             </thead>
             <tbody>
@@ -285,8 +344,8 @@ export const notificationService = {
           </table>
 
           <br/>
-          <p style="font-size: 12px; color: #666;">
-            Enviado automaticamente pelo Sistema SIGA.
+          <p style="text-align: center; font-size: 11px; color: #9ca3af; margin-top: 30px; font-style: italic;">
+            Enviado pelo Sistema SIGA - Sistema Integrado de Gestão de Almoxarifado
           </p>
         </div>
       `;
@@ -303,7 +362,7 @@ export const notificationService = {
         body: JSON.stringify({
           to,
           cc,
-          subject: `[Expedição CD] ${items.length} notas para ${exit.destination_farm?.nome}`,
+          subject: `[Saída CD] Motorista: ${exit.driver_name} - Destino: ${exit.destination_farm?.nome || 'Sem Destino'}`,
           html: htmlBody,
           htmlBody: htmlBody,
           fromEmail: senderEmail,

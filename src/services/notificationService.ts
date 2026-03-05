@@ -390,22 +390,29 @@ export const notificationService = {
   ) {
     try {
       // 1. Buscar configurações
+      const keyTo = fazendaId ? `email_drenagem_to_${fazendaId}` : 'email_drenagem_to';
+      const keyCc = fazendaId ? `email_drenagem_cc_${fazendaId}` : 'email_drenagem_cc';
+
       const settings = await import('./systemService').then((m) =>
-        m.systemService.getParameters(['email_drenagem_to', 'email_drenagem_cc']),
+        m.systemService.getParameters([keyTo, keyCc, 'email_drenagem_to', 'email_drenagem_cc']),
       );
+
+      const rawTo = settings[keyTo] || settings['email_drenagem_to'];
+      const rawCc = settings[keyCc] || settings['email_drenagem_cc'];
+
       const to =
-        settings['email_drenagem_to']
+        rawTo
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
       const cc =
-        settings['email_drenagem_cc']
+        rawCc
           ?.split(',')
           .map((e) => e.trim())
           .filter((e) => e) || [];
 
       if (to.length === 0) {
-        console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para drenagem.');
+        console.warn(`[NOTIFICATION] Nenhum e-mail de destino configurado para drenagem (usando config: ${keyTo} ou email_drenagem_to).`);
         return false;
       }
 

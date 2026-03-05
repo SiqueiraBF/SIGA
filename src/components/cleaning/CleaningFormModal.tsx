@@ -111,8 +111,8 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
         // Validate generic user presence
         if (!user) return;
 
-        // If user has sticky farm, use it. If not, use selected farm.
-        const finalFazendaId = user.fazenda_id || fazendaId;
+        // Use the explicitly selected farm from the dropdown state
+        const finalFazendaId = fazendaId;
 
         if (!finalFazendaId) {
             alert('Erro: É necessário selecionar uma fazenda vinculada.');
@@ -127,11 +127,8 @@ export function CleaningFormModal({ isOpen, onClose, onSuccess }: CleaningFormMo
         setSubmitting(true);
 
         try {
-            // Find fazenda name for email if manual selection
-            let fazendaNome = user.fazenda?.nome;
-            if (!fazendaNome && finalFazendaId) {
-                fazendaNome = fazendas.find(f => f.id === finalFazendaId)?.nome || 'Fazenda';
-            }
+            // Find fazenda name for email based on selection
+            const fazendaNome = fazendas.find(f => f.id === finalFazendaId)?.nome || user.fazenda?.nome || 'Fazenda Desconhecida';
 
             // 1. Create Database Record (Uploads photos to Storage)
             const newRegistry = await cleaningService.createCleaning({

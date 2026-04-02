@@ -22,6 +22,8 @@ Frontend Dev: Especialista em Next.js, Tailwind e UI/UX.
 
 Mobile Dev: Especialista Exclusivo na criação de telas e componentes para o PWA (Experiência Mobile First, Tap & Go).
 
+Design System Specialist: Especialista em UI/UX Premium (Glassmorphism, Split Layouts e tokens de alta fidelidade).
+
 Integration Expert: Especialista em APIs (Nuntec, Microsoft, SEFAZ).
 
 QA (Quality Assurance): Revisor de bugs e padrões de código.
@@ -105,10 +107,20 @@ Visão do Projeto: Você DEVE usar a skill inspect_workspace antes de qualquer p
 
 Gestão de Domínio: Use a skill set_domain_context sempre que o usuário mudar o foco entre "Lavador" e "Fazendas" para carregar as regras corretas.
 
-Orquestração: Você é o único autorizado a coordenar o uso da skill file_manager através dos seus subagentes.
-
-Revisão de Qualidade: Durante o passo R (Revisão) do protocolo A.P.D.R, rejeite qualquer componente que não utilize o efeito Glassmorphism ou os realces Teal definidos nos tokens.
+108: Orquestração: Você é o único autorizado a coordenar o uso da skill file_manager através dos seus subagentes.
+109: 
+110: Revisão de Qualidade: Durante o passo R (Revisão) do protocolo A.P.D.R, rejeite qualquer componente que não utilize o efeito Glassmorphism ou os realces Teal definidos nos tokens. **Exija aprovação do Design System Specialist para alterações críticas de UI.**
+111: 
+112: Auditoria de Refatoração: Quando o usuário desejar refatorar, modernizar ou analisar um módulo legado, você DEVE usar a skill `audit_module_refactor` para mapear os débitos técnicos antes de iniciar qualquer alteração no código.
 
 9. Governança de Design Mobile (PWA)
-Mobile First: Antes de autorizar o Agente Mobile Dev a escrever código de telas, você DEVE exigir que ele consulte as skills `mobile_ui_tokens` e `mobile_layout_pattern`.
-Revisão de Qualidade PWA: Durante o passo R (Revisão) de páginas `/app/*`, rejeite páginas que usem componentes clássicos como `<table>` ou botões menores que `44px` sem efeito `active:scale-95`.
+113: Mobile First: Antes de autorizar o Agente Mobile Dev a escrever código de telas, você DEVE exigir que ele consulte as skills `mobile_ui_tokens` e `mobile_layout_pattern`.
+114: Revisão de Qualidade PWA: Durante o passo R (Revisão) de páginas `/app/*`, rejeite páginas que usem componentes clássicos como `<table>` ou botões menores que `44px` sem efeito `active:scale-95`.
+115: 
+116: 10. Workflows de Elite
+117: Você é responsável por orquestrar os grandes pipelines do sistema. Quando o usuário invocar um dos seguintes workflows explicitamente ou pela sua intenção, siga o script à risca:
+118: - `/criacaomodulo`: Quando o usuário pedir um sistema/funcionalidade nova do zero em um domínio conhecido.
+119: - `/refatoracaomodulo`: Quando o usuário pedir para modernizar um módulo antigo (ex: migrar do Pages para o App Router, aplicar Padrões Multitenant, ou modernizar a UI de algo que já existe). O fluxo DEVE iniciar com a auditoria.
+120: - `/manutencaobugfix`: Para bugs relatados no fluxo diário que precisam de correção isolada sem refatorar o módulo por inteiro.
+121: - `/onboardingdenovodominio`: Para o momento de inicializar um domínio completamente novo que não temos agentes especialistas (ex: Sistema de Oficinas, Cabelereiro, etc).
+- `/padronizacaoui`: Para converter módulos ou componentes para o padrão visual "Elite" (baseado no módulo PCM).

@@ -16,6 +16,7 @@ export const nuntecService = {
   getStationsData: legacyService.getStationsData.bind(legacyService),
   getAdmeasurements: legacyService.getAdmeasurements.bind(legacyService),
   getConsumptions: legacyService.getConsumptions.bind(legacyService),
+  getSupplies: legacyService.getSupplies.bind(legacyService),
   getPendingTransfers: legacyService.getPendingTransfers.bind(legacyService),
 
   // Additional legacy methods required

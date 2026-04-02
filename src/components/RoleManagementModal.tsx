@@ -34,7 +34,34 @@ const CONFIGURABLE_MODULES: {
   supportsManualFueling?: boolean;
   supportsIgnoreNuntec?: boolean;
   supportsNotifications?: boolean;
+  supportsCreate?: boolean;
+  createLabel?: string;
+  createDescription?: string;
+  supportsEditToggle?: boolean;
+  editLabel?: string;
+  editDescription?: string;
+  supportsDelete?: boolean;
+  deleteLabel?: string;
+  deleteDescription?: string;
 }[] = [
+    {
+      key: 'solicitacoes_pcm',
+      label: 'Solicitações PCM',
+      description: 'Gestão de requisições de peças e serviços',
+      supportsConfirm: true,
+      confirmLabel: 'Confirmar Solicitação',
+      confirmDescription: 'Gerar SC no estoque/almoxarifado',
+      supportsCreate: true,
+      createLabel: 'Nova Solicitação',
+      createDescription: 'Abertura de novos pedidos',
+      supportsEditToggle: true,
+      editLabel: 'Editar',
+      editDescription: 'Alterar itens solicitados',
+      supportsDelete: true,
+      deleteLabel: 'Excluir',
+      deleteDescription: 'Cancelar solicitação inteira',
+      supportsNotifications: true,
+    },
     {
       key: 'gestao_combustivel',
       label: 'Baixas de Combustível',
@@ -124,10 +151,17 @@ const CONFIGURABLE_MODULES: {
     },
     {
       key: 'gestao_nfs',
-      label: 'Painel de NFs',
+      label: 'Pendencias de Entrada',
       description: 'Gestão de Notas Fiscais pendentes e conciliadas',
       supportsConfirm: false,
       simpleEdit: true,
+      supportsNotifications: true,
+    },
+    {
+      key: 'gestao_recebimento_direto',
+      label: 'Fuga Processo',
+      description: 'Registro de notas fiscais entregues diretamente (Sem Almoxarifado)',
+      supportsConfirm: false,
       supportsNotifications: true,
     },
   ];
@@ -477,7 +511,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       {mod.key !== 'gestao_estoque' && (
                                         <>
                                           <option value="SAME_FARM">🏠 Mesma Fazenda</option>
-                                          {mod.key !== 'gestao_postos' && (
+                                          {mod.key !== 'gestao_postos' && mod.key !== 'gestao_recebimento_direto' && (
                                             <option value="OWN_ONLY">👤 Apenas Próprios</option>
                                           )}
                                         </>
@@ -486,49 +520,54 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                   </div>
                                 )}
 
-                                {/* EDIÇÃO/AÇÃO */}
-                                <div>
-                                  <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
-                                    Edição / Manutenção
-                                  </label>
-                                  <select
-                                    value={perms.edit_scope}
-                                    onChange={(e) =>
-                                      handlePermissionChange(
-                                        selectedRole.id,
-                                        mod.key,
-                                        'edit_scope',
-                                        e.target.value,
-                                      )
-                                    }
-                                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
-                                  >
-                                    <option value="NONE">🔒 Leitura Apenas</option>
-                                    {mod.key === 'abrir_solicitacao' ? (
-                                      <>
-                                        <option value="OWN_PENDING">
-                                          📝 Solicitante (Rascunhos)
-                                        </option>
-                                        <option value="ALL">🛠️ Gerenciamento Completo</option>
-                                      </>
-                                    ) : (mod.key === 'gestao_transferencias' || mod.key === 'gestao_recebimento') ? (
-                                      <>
-                                        <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                {mod.key === 'solicitacoes_pcm' ? (
+                                  <div className="flex items-end pb-1 text-slate-300 text-[10px] italic">
+                                    Use as opções ao lado
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
+                                      Edição / Manutenção
+                                    </label>
+                                    <select
+                                      value={perms.edit_scope}
+                                      onChange={(e) =>
+                                        handlePermissionChange(
+                                          selectedRole.id,
+                                          mod.key,
+                                          'edit_scope',
+                                          e.target.value,
+                                        )
+                                      }
+                                      className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
+                                    >
+                                      <option value="NONE">🔒 Leitura Apenas</option>
+                                      {mod.key === 'abrir_solicitacao' ? (
+                                        <>
+                                          <option value="OWN_PENDING">
+                                            📝 Solicitante (Rascunhos)
+                                          </option>
+                                          <option value="ALL">🛠️ Gerenciamento Completo</option>
+                                        </>
+                                      ) : (mod.key === 'gestao_transferencias' || mod.key === 'gestao_recebimento' || mod.key === 'gestao_recebimento_direto' || mod.key === 'gestao_nfs') ? (
+                                        <>
+                                          <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                          <option value="ALL">🛠️ Gerenciamento Total</option>
+                                        </>
+                                      ) : mod.simpleEdit ? (
                                         <option value="ALL">🛠️ Gerenciamento Total</option>
-                                      </>
-                                    ) : mod.simpleEdit ? (
-                                      <option value="ALL">🛠️ Gerenciamento Total</option>
-                                    ) : (
-                                      <>
-                                        <option value="OWN_PENDING">
-                                          📝 Próprios (Se Pendente)
-                                        </option>
-                                        <option value="OWN_ONLY">👤 Próprios (Sempre)</option>
-                                        <option value="ALL">🛠️ Gerenciamento Total</option>
-                                      </>
-                                    )}
-                                  </select>
-                                </div>
+                                      ) : (
+                                        <>
+                                          <option value="OWN_PENDING">
+                                            📝 Próprios (Se Pendente)
+                                          </option>
+                                          <option value="OWN_ONLY">👤 Próprios (Sempre)</option>
+                                          <option value="ALL">🛠️ Gerenciamento Total</option>
+                                        </>
+                                      )}
+                                    </select>
+                                  </div>
+                                )}
 
                                 {/* AÇÕES ESPECÍFICAS */}
                                 {mod.supportsConfirm && (
@@ -620,7 +659,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       />
                                       <div className="flex flex-col">
                                         <span className="text-sm font-semibold text-slate-700">
-                                          {mod.key === 'gestao_limpeza' ? 'Configurar E-mails e Fazendas' : (mod.key === 'gestao_drenagem' ? 'Notificações de Drenagem' : (mod.key === 'gestao_recebimento' ? 'Notificações de Recebimento' : (mod.key === 'gestao_nfs' ? 'Notificações de NFs' : 'Notificações de Estoque')))}
+                                          {mod.key === 'gestao_limpeza' ? 'Configurar E-mails e Fazendas' : (mod.key === 'solicitacoes_pcm' ? 'Configurar E-mail' : (mod.key === 'gestao_drenagem' ? 'Notificações de Drenagem' : (mod.key === 'gestao_recebimento' ? 'Notificações de Recebimento' : (mod.key === 'gestao_nfs' ? 'Notificações de NFs' : (mod.key === 'gestao_recebimento_direto' ? 'Configurar E-mails' : 'Notificações de Estoque')))))}
                                         </span>
                                         <span className="text-[10px] text-slate-400 leading-tight">
                                           Recebe/Configura E-mails
@@ -729,11 +768,114 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                   </div>
                                 )}
 
+                                {mod.supportsCreate && (
+                                  <div className="flex items-end pb-1">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 w-full transition-colors">
+                                      <div
+                                        className={`w-5 h-5 rounded border flex items-center justify-center ${perms.can_create ? 'bg-cyan-500 border-cyan-500 text-white' : 'bg-white border-slate-300'}`}
+                                      >
+                                        {perms.can_create && <Check size={14} />}
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={!!perms.can_create}
+                                        onChange={(e) =>
+                                          handlePermissionChange(
+                                            selectedRole.id,
+                                            mod.key,
+                                            'can_create',
+                                            e.target.checked,
+                                          )
+                                        }
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-slate-700">
+                                          {mod.createLabel || 'Novo Registro'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 leading-tight">
+                                          {mod.createDescription || 'Criar dados'}
+                                        </span>
+                                      </div>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {mod.supportsEditToggle && (
+                                  <div className="flex items-end pb-1">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 w-full transition-colors">
+                                      <div
+                                        className={`w-5 h-5 rounded border flex items-center justify-center ${perms.can_edit ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300'}`}
+                                      >
+                                        {perms.can_edit && <Check size={14} />}
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={!!perms.can_edit}
+                                        onChange={(e) =>
+                                          handlePermissionChange(
+                                            selectedRole.id,
+                                            mod.key,
+                                            'can_edit',
+                                            e.target.checked,
+                                          )
+                                        }
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-slate-700">
+                                          {mod.editLabel || 'Editar'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 leading-tight">
+                                          {mod.editDescription || 'Alterar dados'}
+                                        </span>
+                                      </div>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {mod.supportsDelete && (
+                                  <div className="flex items-end pb-1">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 w-full transition-colors">
+                                      <div
+                                        className={`w-5 h-5 rounded border flex items-center justify-center ${perms.can_delete ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-slate-300'}`}
+                                      >
+                                        {perms.can_delete && <Check size={14} />}
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={!!perms.can_delete}
+                                        onChange={(e) =>
+                                          handlePermissionChange(
+                                            selectedRole.id,
+                                            mod.key,
+                                            'can_delete',
+                                            e.target.checked,
+                                          )
+                                        }
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-slate-700">
+                                          {mod.deleteLabel || 'Excluir'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 leading-tight">
+                                          {mod.deleteDescription || 'Remover dados'}
+                                        </span>
+                                      </div>
+                                    </label>
+                                  </div>
+                                )}
+
                                 {!mod.supportsConfirm &&
                                   !mod.supportsFleetManagement &&
                                   !mod.supportsRoleManagement &&
                                   !mod.supportsManualFueling &&
-                                  !mod.supportsIgnoreNuntec && (
+                                  !mod.supportsIgnoreNuntec &&
+                                  !mod.supportsNotifications &&
+                                  !mod.supportsCreate &&
+                                  !mod.supportsEditToggle &&
+                                  !mod.supportsDelete && (
                                     <div className="flex items-end pb-1 text-slate-300 text-xs italic">
                                       Ações extras não aplicáveis
                                     </div>

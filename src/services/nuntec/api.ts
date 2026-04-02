@@ -10,8 +10,14 @@ export async function getConfig(): Promise<NuntecConfig | null> {
         const config = await db.getIntegrationConfig();
         if (config) {
             if (!config.is_active) return null; // Explicitly disabled
+
+            // Bypass CORS in all environments: Force local proxy if running in browser
+            const isBrowser = typeof window !== 'undefined';
+            const defaultRemoteUrl = 'https://nadiana.nuntec.com.br';
+            const baseUrl = isBrowser ? DEFAULTS.BASE_URL : (config.base_url || defaultRemoteUrl);
+
             return {
-                BASE_URL: config.base_url || DEFAULTS.BASE_URL,
+                BASE_URL: baseUrl,
                 START_DATE_SYNC: config.sync_start_date
                     ? `${config.sync_start_date}T00:00:00`
                     : DEFAULTS.START_DATE_SYNC,

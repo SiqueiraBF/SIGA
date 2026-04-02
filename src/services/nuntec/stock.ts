@@ -4,16 +4,21 @@ import { NuntecMeasurement } from '../../types';
 import { getConfig, getAuthHeaders, fetchNuntec } from './api';
 import { getTagValue, parseXML } from './parsers';
 
-export async function getStockMeasurementsService(allowedReservoirIds?: string[]): Promise<NuntecMeasurement[]> {
+export async function getStockMeasurementsService(allowedReservoirIds?: string[], sinceDate?: Date | string): Promise<NuntecMeasurement[]> {
     const config = await getConfig();
     if (!config) return [];
 
     const headers = getAuthHeaders(config);
 
     try {
-        const now = new Date();
-        const sinceDate = subHours(now, 72);
-        const since = format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
+        let since: string;
+        if (sinceDate) {
+            since = typeof sinceDate === 'string' ? `${sinceDate.split('T')[0]}T00:00:00` : format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
+        } else {
+            const now = new Date();
+            const d = subHours(now, 72);
+            since = format(d, "yyyy-MM-dd'T'HH:mm:ss");
+        }
 
         const response = await fetchNuntec(`stock_pointings.xml?created_at=${since}`, config, headers);
         const xmlText = await response.text();

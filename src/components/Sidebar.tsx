@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import {
@@ -22,6 +22,9 @@ import {
   Truck,
   Menu,
   X,
+  Receipt,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Modulo } from '../types';
@@ -31,120 +34,191 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
+interface MenuItem {
+  label: string;
+  icon: React.ReactNode;
+  path: string;
+  modules: Modulo[];
+}
+
+interface MenuSection {
+  title?: string;
+  items: MenuItem[];
+}
+
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
+  const toggleSection = (title: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [title]: !prev[title],
+    }));
+  };
+
   if (!user || !role) return null;
 
-  const menuItems: { label: string; icon: React.ReactNode; path: string; modules: Modulo[] }[] = [
+  const menuSections: MenuSection[] = [
     {
-      label: 'Início',
-      icon: <Home size={20} />,
-      path: '/',
-      modules: [],
+      items: [
+        {
+          label: 'Início',
+          icon: <Home size={20} />,
+          path: '/',
+          modules: [],
+        },
+        {
+          label: 'Solicitações de Cadastro',
+          icon: <LayoutDashboard size={20} />,
+          path: '/solicitacoes',
+          modules: ['abrir_solicitacao'],
+        },
+      ],
     },
     {
-      label: 'Solicitações de Cadastro',
-      icon: <LayoutDashboard size={20} />,
-      path: '/solicitacoes',
-      modules: ['abrir_solicitacao'],
+      title: 'Logística e Estoque',
+      items: [
+        {
+          label: 'Solicitações PCM',
+          icon: <ClipboardList size={20} />,
+          path: '/pcm-solicitacoes',
+          modules: ['solicitacoes_pcm'],
+        },
+        {
+          label: 'Transferência de Estoque',
+          icon: <Package size={20} />,
+          path: '/estoque/solicitacoes',
+          modules: ['gestao_transferencias'],
+        },
+        {
+          label: 'Gestão de Estoque',
+          icon: <FileSpreadsheet size={20} />,
+          path: '/estoque/importar',
+          modules: ['gestao_estoque'],
+        },
+        {
+          label: 'Controle de Exp. e Recebimento',
+          icon: <Package size={20} />,
+          path: '/recebimento',
+          modules: ['gestao_recebimento'],
+        },
+      ],
     },
     {
-      label: 'Transferência de Estoque',
-      icon: <Package size={20} />,
-      path: '/estoque/solicitacoes',
-      modules: ['gestao_transferencias'],
-    },
-    // Dashboard moved to Requests tab
-    /* {
-      label: 'Dashboard de Cadastros',
-      icon: <ClipboardList size={20} />,
-      path: '/cadastros',
-      modules: ['analisar_cadastros'],
-    }, */
-    {
-      label: 'Gestão de Estoque',
-      icon: <FileSpreadsheet size={20} />, // Keeping FileSpreadsheet or maybe Package/Boxes? Let's keep consistent for now or change to Boxes
-      path: '/estoque/importar', // Keep path to avoid breaking routes, but behavior changes
-      modules: ['gestao_estoque'],
+      title: 'Fiscal e Recebimento',
+      items: [
+        {
+          label: 'Pendencias de Entrada',
+          icon: <ClipboardList size={20} />,
+          path: '/nfs/dashboard',
+          modules: ['gestao_nfs'],
+        },
+        {
+          label: 'Fuga Processo',
+          icon: <Receipt size={20} />,
+          path: '/recebimento-direto',
+          modules: ['gestao_recebimento_direto'],
+        },
+      ],
     },
     {
-      label: 'Postos de Abastecimento',
-      icon: <Warehouse size={20} />,
-      path: '/postos',
-      modules: ['gestao_postos'],
+      title: 'Operacional e Postos',
+      items: [
+        {
+          label: 'Postos de Abastecimento',
+          icon: <Warehouse size={20} />,
+          path: '/postos',
+          modules: ['gestao_postos'],
+        },
+        {
+          label: 'Drenagem de Postos',
+          icon: <Droplet size={20} />,
+          path: '/drenagem',
+          modules: ['gestao_drenagem'],
+        },
+        {
+          label: 'Baixas de Combustível',
+          icon: <Fuel size={20} />,
+          path: '/abastecimentos',
+          modules: ['gestao_combustivel', 'abast_lancar', 'abast_conferir'],
+        },
+      ],
     },
     {
-      label: 'Drenagem de Postos',
-      icon: <Droplet size={20} />,
-      path: '/drenagem',
-      modules: ['gestao_drenagem'],
+      title: 'Auditoria e Controle',
+      items: [
+        {
+          label: 'Auditoria de Recebimento',
+          icon: <ShieldCheck size={20} />,
+          path: '/auditoria-recebimento',
+          modules: ['gestao_auditoria'],
+        },
+        {
+          label: 'Auditoria de Abastecimentos',
+          icon: <Gauge size={20} />,
+          path: '/auditoria-medicoes',
+          modules: ['gestao_auditoria'],
+        },
+        {
+          label: 'Limpeza e Organização',
+          icon: <Sparkles size={20} />,
+          path: '/limpeza',
+          modules: ['gestao_limpeza'],
+        },
+      ],
     },
     {
-      label: 'Painel de NFs',
-      icon: <ClipboardList size={20} />, // Reusing ClipboardList or maybe BarChart2 (if imported)
-      path: '/nfs/dashboard',
-      modules: ['gestao_nfs'], // Restricted to Admins (who bypass checks) or users with this specific module
-    },
-
-    {
-      label: 'Baixas de Combustível',
-      icon: <Fuel size={20} />,
-      path: '/abastecimentos',
-      modules: ['gestao_combustivel', 'abast_lancar', 'abast_conferir'],
-    },
-    {
-      label: 'Controle de Exp. e Recebimento',
-      icon: <Package size={20} />,
-      path: '/recebimento',
-      modules: ['gestao_recebimento'],
-    },
-    {
-      label: 'Auditoria de Recebimento',
-      icon: <ShieldCheck size={20} />,
-      path: '/auditoria-recebimento',
-      modules: ['gestao_auditoria'],
-    },
-    {
-      label: 'Auditoria de Abastecimentos',
-      icon: <Gauge size={20} />,
-      path: '/auditoria-medicoes',
-      modules: ['gestao_auditoria'],
-    },
-    {
-      label: 'Gestão de Usuários',
-      icon: <Users size={20} />,
-      path: '/usuarios',
-      modules: ['gestao_usuarios'],
-    },
-    {
-      label: 'Gestão de Filiais',
-      icon: <Building2 size={20} />,
-      path: '/filiais',
-      modules: ['config_fazendas'],
-    },
-
-    {
-      label: 'Limpeza e Organização',
-      icon: <Sparkles size={20} />,
-      path: '/limpeza',
-      modules: ['gestao_limpeza'],
+      title: 'Configurações',
+      items: [
+        {
+          label: 'Gestão de Usuários',
+          icon: <Users size={20} />,
+          path: '/usuarios',
+          modules: ['gestao_usuarios'],
+        },
+        {
+          label: 'Gestão de Filiais',
+          icon: <Building2 size={20} />,
+          path: '/filiais',
+          modules: ['config_fazendas'],
+        },
+      ],
     },
   ];
 
-  const allowedItems = menuItems.filter(
-    (item) =>
-      role.nome === 'Administrador' ||
-      item.modules.length === 0 ||
-      item.modules.some((m) => role.modulos_permitidos.includes(m)),
-  );
+  const filterItems = (items: MenuItem[]) =>
+    items.filter(
+      (item) =>
+        role.nome === 'Administrador' ||
+        item.modules.length === 0 ||
+        item.modules.some((m) => role.modulos_permitidos.includes(m)),
+    );
+
+  // Auto-expand section on mount if active item is inside
+  useEffect(() => {
+    const newExpanded: Record<string, boolean> = {};
+    menuSections.forEach((section) => {
+      if (section.title) {
+        const hasActiveItem = section.items.some((item) => {
+          if (item.path === '/') return location.pathname === '/';
+          return location.pathname.startsWith(item.path);
+        });
+        if (hasActiveItem) {
+          newExpanded[section.title] = true;
+        }
+      }
+    });
+    setExpandedSections((prev) => ({ ...prev, ...newExpanded }));
+  }, [location.pathname]);
 
   return (
     <>
@@ -161,8 +235,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       <div
         className={clsx(
           "flex flex-col h-screen w-64 bg-slate-900 text-white shadow-xl transition-transform duration-300 z-50 fixed md:relative",
-          // Mobile: slide in/out based on isOpen
-          // Desktop: always show (translate-x-0)
           isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
@@ -175,7 +247,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <h1 className="text-xl font-bold tracking-tight">SIGA</h1>
             </div>
           </div>
-          {/* Close button for mobile */}
           <button
             onClick={onClose}
             className="md:hidden text-slate-400 hover:text-white transition-colors"
@@ -200,29 +271,64 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="text-xs text-slate-500 uppercase font-semibold mb-2 ml-2">Menu</div>
-          {allowedItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={() => {
-                // Close sidebar on mobile when navigating
-                if (onClose) onClose();
-              }}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white',
-                )
-              }
-            >
-              {item.icon}
-              {item.label}
-            </NavLink>
-          ))}
+        <nav className="flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar">
+          {menuSections.map((section, idx) => {
+            const allowedItems = filterItems(section.items);
+            if (allowedItems.length === 0) return null;
+
+            const isExpanded = !section.title || expandedSections[section.title];
+
+            return (
+              <div key={idx} className="space-y-1">
+                {section.title && (
+                  <button
+                    onClick={() => toggleSection(section.title!)}
+                    className="w-full px-4 py-2 flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-slate-300 transition-colors group"
+                  >
+                    <span>{section.title}</span>
+                    <div className="transition-transform duration-200">
+                      {isExpanded ? (
+                        <ChevronDown size={14} className="text-slate-600 group-hover:text-slate-400" />
+                      ) : (
+                        <ChevronRight size={14} className="text-slate-600 group-hover:text-slate-400" />
+                      )}
+                    </div>
+                  </button>
+                )}
+                
+                <div className={clsx(
+                  "space-y-1 overflow-hidden transition-all duration-300 ease-in-out",
+                  isExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+                )}>
+                  {allowedItems.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => {
+                        if (onClose) onClose();
+                      }}
+                      className={({ isActive }) =>
+                        clsx(
+                          'flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group mx-1',
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+                        )
+                      }
+                    >
+                      <span className={clsx(
+                        "transition-transform duration-200 group-hover:scale-110",
+                        "text-current"
+                      )}>
+                        {item.icon}
+                      </span>
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-1">

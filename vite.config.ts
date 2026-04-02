@@ -14,11 +14,20 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
+      // Serverless function proxy → local dev server (node api/audit-dev-server.mjs)
+      '/api/audit': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      // Nuntec direct proxy (used by other integrations)
       '/api/nuntec': {
         target: 'https://nadiana.nuntec.com.br',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/nuntec/, ''),
       },
     },
+  },
+  build: {
+    chunkSizeWarningLimit: 2000,
   },
 });

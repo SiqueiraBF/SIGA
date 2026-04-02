@@ -4,7 +4,7 @@ export const farmService = {
     async getFarms() {
         const { data, error } = await supabase
             .from('fazendas')
-            .select('id, nome')
+            .select('id, nome, ativo')
             .order('nome');
 
         if (error) throw error;

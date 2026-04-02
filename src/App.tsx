@@ -55,6 +55,12 @@ const FuelingConsistency = lazy(() =>
 const GoodsReceiptManager = lazy(() =>
   import('./pages/GoodsReceiptManager').then((module) => ({ default: module.GoodsReceiptManager })),
 );
+const DirectReceiptList = lazy(() =>
+  import('./pages/DirectReceiptList').then((module) => ({ default: module.DirectReceiptList })),
+);
+const PcmRequests = lazy(() =>
+  import('./pages/PcmRequests').then((module) => ({ default: module.PcmRequests })),
+);
 const MobileLayout = lazy(() =>
   import('./components/layout/MobileLayout').then((module) => ({ default: module.MobileLayout })),
 );
@@ -76,8 +82,7 @@ const MobileGoodsExit = lazy(() =>
 const MobileStockSeparation = lazy(() =>
   import('./pages/mobile/MobileStockSeparation').then((module) => ({ default: module.MobileStockSeparation })),
 );
-
-
+import { SyncStatusWidget } from './components/ui/SyncStatusWidget';
 
 // Wrapper for protected routes
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -271,6 +276,22 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'recebimento-direto',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <DirectReceiptList />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'pcm-solicitacoes',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <PcmRequests />
+          </Suspense>
+        ),
+      },
+      {
         path: 'configuracoes',
         element: <div className="p-8">Configurações (Em Breve)</div>,
       },
@@ -342,10 +363,14 @@ const router = createBrowserRouter([
   },
 ]);
 
+import { Toaster } from 'react-hot-toast';
+
 export default function App() {
   return (
     <AuthProvider>
       <PresenceProvider>
+        <Toaster position="top-right" toastOptions={{ duration: 4000, style: { background: '#334155', color: '#fff' } }} />
+        <SyncStatusWidget />
         <RouterProvider router={router} />
       </PresenceProvider>
     </AuthProvider>

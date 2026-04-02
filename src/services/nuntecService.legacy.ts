@@ -7,8 +7,8 @@ import { format, parseISO, subHours } from 'date-fns';
 const DEFAULTS = {
   BASE_URL: '/api/nuntec',
   START_DATE_SYNC: '2026-01-01T00:00:00',
-  AUTH_USER: 'bruno.siqueira',
-  AUTH_PASS: '98765412',
+  AUTH_USER: 'integracao.gerente',
+  AUTH_PASS: '54v0imuy',
 };
 
 // Simple in-memory cache for operator names
@@ -618,7 +618,7 @@ export const nuntecService = {
             const t: NuntecConsumption = {
               id: getTagValue(node, 'id') || '',
               amount: amount,
-              'end-date': endDate || '',
+              'end-date': endAtStr || endDate || '',
               'reservoir-id': getTagValue(pointingNode, 'reservoir-id') || '',
               'nozzle-id': getTagValue(pointingNode, 'nozzle-number') || undefined,
             };
@@ -669,7 +669,7 @@ export const nuntecService = {
             const t: NuntecConsumption = {
               id: getTagValue(node, 'id') || '',
               amount: amount,
-              'end-date': endDate || '',
+              'end-date': dateStr || endDate || '',
               'reservoir-id': reservoirId || '',
               'nozzle-id': nozzleId || undefined,
             };
@@ -693,6 +693,68 @@ export const nuntecService = {
   },
 
   /**
+   * Fetches supplies (entries/invoices) from Nuntec API for a specific range.
+   */
+  async getSupplies(startDate: string, endDate: string, allowedReservoirIds?: string[]): Promise<any[]> {
+    const config = await this.getConfig();
+    if (!config) return [];
+
+    const headers = new Headers();
+    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+
+    try {
+      const sinceDate = parseISO(startDate);
+      const sinceStr = `${startDate}T00:00:00`;
+      const endDateTime = parseISO(`${endDate}T23:59:59`);
+
+      const response = await fetch(`${config.BASE_URL}/supplies.xml?created_at=${sinceStr}`, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) return [];
+
+      const xmlText = await response.text();
+      if (xmlText.includes('<html')) return [];
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const nodes = xmlDoc.getElementsByTagName('supply');
+
+      const data: any[] = [];
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const resId = getTagValue(node, 'reservoir-id') || getTagValue(node, 'destination-id');
+        const dateStr = getTagValue(node, 'issued-at') || getTagValue(node, 'created-at') || getTagValue(node, 'date');
+
+        if (dateStr) {
+          const itemDate = parseISO(dateStr);
+          if (itemDate < sinceDate || itemDate > endDateTime) continue;
+        }
+
+        if (resId) {
+          if (allowedReservoirIds && allowedReservoirIds.length > 0 && !allowedReservoirIds.includes(resId)) {
+            continue;
+          }
+
+          data.push({
+            id: getTagValue(node, 'id'),
+            'reservoir-id': resId,
+            amount: parseFloat(getTagValue(node, 'volume') || getTagValue(node, 'amount') || '0'),
+            date: dateStr,
+            invoice: getTagValue(node, 'invoice-number')
+          });
+        }
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching Nuntec Supplies:', error);
+      return [];
+    }
+  },
+
+  /**
    * Helper to get active config or defaults
    */
   async getConfig() {
@@ -700,8 +762,14 @@ export const nuntecService = {
       const config = await db.getIntegrationConfig();
       if (config) {
         if (!config.is_active) return null; // Explicitly disabled
+
+        // Bypass CORS in all environments: Force local proxy if running in browser
+        const isBrowser = typeof window !== 'undefined';
+        const defaultRemoteUrl = 'https://nadiana.nuntec.com.br';
+        const baseUrl = isBrowser ? DEFAULTS.BASE_URL : (config.base_url || defaultRemoteUrl);
+
         return {
-          BASE_URL: config.base_url || DEFAULTS.BASE_URL,
+          BASE_URL: baseUrl,
           START_DATE_SYNC: config.sync_start_date
             ? `${config.sync_start_date}T00:00:00`
             : DEFAULTS.START_DATE_SYNC,
@@ -1111,6 +1179,8 @@ export const nuntecService = {
     headers.set('Content-Type', 'application/xml');
 
     // 1. Prepare Data
+    console.log('[DEBUG NUNTEC] Data received:', data);
+
     // Extract Numeric IDs from Strings
     const operationId = data.operacao.match(/^(\d+)/)?.[1] || '1'; // Default to 1 if not found
     const cultureId = data.cultura.match(/^(\d+)/)?.[1] || '1';
@@ -1118,7 +1188,9 @@ export const nuntecService = {
     // Auto-Lookup Original Transfer if missing
     let sourceTransfer = originalTransfer;
     if (!sourceTransfer && data.nuntec_transfer_id) {
+      console.log('[DEBUG NUNTEC] Fetching source transfer:', data.nuntec_transfer_id);
       sourceTransfer = (await this.getTransferById(data.nuntec_transfer_id)) || undefined;
+      console.log('[DEBUG NUNTEC] Source transfer found:', sourceTransfer?.id);
     }
 
     // Technical IDs from Original Transfer or Persisted Data
@@ -1148,6 +1220,13 @@ export const nuntecService = {
     // Final fallback
     if (!reservoirId) reservoirId = '1';
 
+    console.log('[DEBUG NUNTEC] IDs Calculated:', {
+      operatorId,
+      fuelId,
+      reservoirId,
+      nozzleNumber,
+    });
+
     // Amount must be negative for output (fueled)
     const amount = -Math.abs(data.volume);
 
@@ -1170,6 +1249,8 @@ export const nuntecService = {
       console.warn(`[Nuntec] No numeric Vehicle ID found (Orig: ${data.veiculo_id}, Name: ${data.veiculo_nome}). Fallback to 0.`);
       vehicleId = '0';
     }
+
+    console.log('[DEBUG NUNTEC] Vehicle ID:', vehicleId, 'Amount:', amount);
 
     // Operator ID: Must be numeric.
     // If not numeric, fall back to default '24'.
@@ -1207,9 +1288,11 @@ export const nuntecService = {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Nuntec API Error]', errorText);
+      console.error('[Nuntec API Error] Status:', response.status, 'Body:', errorText);
       throw new Error(`Erro Nuntec (${response.status}): ${errorText}`);
     }
+
+    console.log('[Nuntec API] Response received successfully');
 
     // Parse response to find ID
     const responseText = await response.text();
@@ -1226,7 +1309,7 @@ export const nuntecService = {
             <${tag}>
                 <vehicle-id>${vehicleId}</vehicle-id>
                 <datetime>${format(parseISO(data.data_abastecimento), 'yyyy-MM-dd HH:mm:ss')}</datetime>
-                <value>${data.leitura_marcador}.0</value>
+                <value>${parseFloat(String(data.leitura_marcador).replace(',', '.')).toFixed(1)}</value>
                 <entered-manually>true</entered-manually>
             </${tag}>
         `.trim();
@@ -1236,6 +1319,11 @@ export const nuntecService = {
         method: 'POST',
         headers,
         body: metricXml
+      }).then(async res => {
+        if (!res.ok) {
+           const txt = await res.text();
+           console.error(`[Nuntec API] Failed to send ${tag} (Status ${res.status}): ${txt}`);
+        }
       }).catch(e => console.warn(`Failed to send ${tag}`, e));
     }
 

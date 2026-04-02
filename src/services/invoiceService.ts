@@ -80,6 +80,30 @@ export const invoiceService = {
     },
 
     /**
+     * Atualiza dados de uma nota
+     */
+    async updateInvoice(id: string, updates: Partial<PendingInvoice>): Promise<void> {
+        const { error } = await supabase
+            .from('pending_invoices')
+            .update(updates)
+            .eq('id', id);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Exclui uma nota pendente
+     */
+    async deleteInvoice(id: string): Promise<void> {
+        const { error } = await supabase
+            .from('pending_invoices')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+    },
+
+    /**
      * Calcula KPIs simples
      */
     async getKPIs(farmId?: string): Promise<InvoiceKPIs> {

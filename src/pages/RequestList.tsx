@@ -58,12 +58,13 @@ export function RequestList() {
       if (!user) throw new Error("User not found");
 
       // Fetch requests with joins and counts in ONE call
-      // Using a large limit (500) to maintain current client-side filter logic
-      const { data: requestsData } = await db.getRequestsOptimized(1, 500);
+      // Increased limit to 2000 to better support client-side counting/filtering for now
+      const result = await db.getRequestsOptimized(1, 2000);
       const [fazendasData, usuariosData] = await Promise.all([db.getAllFarms(), db.getAllUsers()]);
 
       return {
-        requests: requestsData,
+        requests: result.data,
+        totalDatabaseCount: result.totalCount,
         fazendas: fazendasData as Fazenda[],
         usuarios: usuariosData as Usuario[],
       };
@@ -295,7 +296,11 @@ export function RequestList() {
     showOnlyMine;
 
   // KPIs
+  const totalDatabaseCount = data?.totalDatabaseCount || 0;
   const totalRequests = baseRequests.length;
+  // If we have active filters, show the filtered count. Otherwise show the DB total.
+  const displayTotal = hasActiveFilters ? totalRequests : totalDatabaseCount;
+
   const aguardando = baseRequests.filter((r) => r.status === 'Aguardando').length;
   const emCadastro = baseRequests.filter((r) => r.status === 'Em Cadastro').length;
   const finalizadas = baseRequests.filter((r) => r.status === 'Finalizado').length;
@@ -371,9 +376,9 @@ export function RequestList() {
             >
               <StatsCard
                 title="TOTAL"
-                value={totalRequests}
+                value={displayTotal}
                 icon={FileText}
-                description="registradas"
+                description={hasActiveFilters ? "encontradas" : "registradas"}
                 variant={!filterStatus ? 'blue' : 'default'}
                 onClick={() => setFilterStatus('')}
                 className={!filterStatus ? 'ring-2 ring-blue-200' : ''}
@@ -680,7 +685,7 @@ export function RequestList() {
             {/* Summary */}
             <div className="flex items-center justify-between text-sm text-slate-500 px-2">
               <span>
-                Mostrando {sortedRequests.length} de {requests.length} solicitação(ões)
+                Mostrando {sortedRequests.length} de {totalDatabaseCount} solicitação(ões)
               </span>
             </div>
           </>

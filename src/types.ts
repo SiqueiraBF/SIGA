@@ -14,7 +14,9 @@ export type Modulo =
   | 'gestao_drenagem'
   | 'gestao_auditoria'
   | 'gestao_estoque'
-  | 'gestao_nfs';
+  | 'gestao_nfs'
+  | 'gestao_recebimento_direto'
+  | 'solicitacoes_pcm';
 
 export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
 export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
@@ -28,6 +30,9 @@ export interface ModulePermission {
   manage_roles?: boolean;
   can_ignore_nuntec?: boolean; // Permite ignorar pendências da Nuntec
   can_create_manual?: boolean; // Permite criar baixas manuais (sem integração)
+  can_create?: boolean;      // Nova Solicitação / Novo Registro (Toggles extras)
+  can_edit?: boolean;        // Edição rápida (Toggles extras)
+  can_delete?: boolean;      // Exclusão (Toggles extras)
 }
 
 export interface Funcao {
@@ -340,4 +345,26 @@ export interface GoodsReceipt {
   receiver?: { nome: string; email?: string };
   destination_farm?: { nome: string };
   exit?: GoodsExit;
+}
+
+// --- Módulo de Fuga Processo (Antigo Recebimento Direto) ---
+
+export interface DirectReceipt {
+  id: string;
+  nota_fiscal: string;
+  fornecedor: string;
+  data_emissao: string;
+  data_recebimento: string;
+  local_recebimento: string;
+  local_recebimento_outros?: string;
+  responsavel: string;
+  valor: number;
+  usuario_id: string;
+  fazenda_id: string;
+  observacao?: string;
+  created_at: string;
+
+  // Joins
+  usuario?: { nome: string };
+  fazenda?: { nome: string };
 }

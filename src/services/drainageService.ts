@@ -148,6 +148,7 @@ export const drainageService = {
     ) {
         // 1. Upload Photos
         const photoUrls: string[] = [];
+        const uploadedFilePaths: string[] = [];
 
         for (const file of photos) {
             const fileExt = file.name.split('.').pop();
@@ -169,6 +170,7 @@ export const drainageService = {
                 .getPublicUrl(filePath);
 
             photoUrls.push(publicUrl);
+            uploadedFilePaths.push(filePath);
         }
 
         // 2. Insert Record
@@ -181,7 +183,15 @@ export const drainageService = {
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            // ROLLBACK: Remove uploaded photos if DB insert fails
+            if (uploadedFilePaths.length > 0) {
+                console.warn('DB Insert failed. Rolling back storage uploads...', uploadedFilePaths);
+                await supabase.storage.from('drainage-photos').remove(uploadedFilePaths);
+            }
+            throw error;
+        }
+
         return data as StationDrainage;
     },
 
@@ -191,6 +201,7 @@ export const drainageService = {
         newPhotos?: File[]
     ) {
         let photoUrls = updates.fotos || [];
+        const uploadedFilePaths: string[] = [];
 
         // Upload new photos if any
         if (newPhotos && newPhotos.length > 0) {
@@ -210,6 +221,7 @@ export const drainageService = {
                         .upload(fileName, file);
 
                     if (!uploadError) {
+                        uploadedFilePaths.push(fileName);
                         const { data: { publicUrl } } = supabase.storage
                             .from('drainage-photos')
                             .getPublicUrl(fileName);
@@ -226,7 +238,15 @@ export const drainageService = {
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            // ROLLBACK newly uploaded photos
+            if (uploadedFilePaths.length > 0) {
+                console.warn('DB Update failed. Rolling back new storage uploads...', uploadedFilePaths);
+                await supabase.storage.from('drainage-photos').remove(uploadedFilePaths);
+            }
+            throw error;
+        }
+
         return data as StationDrainage;
     },
 

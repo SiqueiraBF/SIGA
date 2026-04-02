@@ -1,0 +1,1 @@
+ALTER TABLE pcm_solicitacoes_compras ADD COLUMN IF NOT EXISTS email_thread_id text;

@@ -19,7 +19,7 @@ Infra de Dados: Supabase (Banco de Dados, Auth, Storage e Edge Functions).
 
 Controle de Versão: GitHub (GitHub Actions para automação).
 
-Monitoramento: Vercel Analytics e Logs do Supabase para rastrear a saúde do sistema de lavador e logística.
+Monitoramento: Vercel Analytics e Logs do Supabase para rastrear a saúde do sistema.
 
 3. Gestão de Variáveis e Segredos (Environment Rules)
 Você é o único responsável por organizar as chaves sensíveis do sistema:

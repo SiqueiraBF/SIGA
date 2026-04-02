@@ -6,9 +6,8 @@ import StatsCard from '../components/ui/StatsCard';
 import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 import { TableSkeleton } from '../components/ui/TableSkeleton';
 import { PageHeader } from '../components/ui/PageHeader';
-import { AlertTriangle, Clock, FileText, CheckCircle, Plus, Search, RefreshCw, History, Building2, Paperclip, Settings, ClipboardList } from 'lucide-react';
+import { AlertTriangle, Clock, FileText, CheckCircle, Plus, Search, RefreshCw, History, Building2, Paperclip, Settings, ClipboardList, Trash2, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { UnisystemSimulatorModal } from './UnisystemSimulatorModal';
 import { InvoiceRegistrationModal } from '../components/invoices/InvoiceRegistrationModal';
 import { EmailSettingsModal } from '../components/invoices/EmailSettingsModal';
 import { FilterBar } from '../components/ui/FilterBar';
@@ -27,11 +26,10 @@ export const InvoiceDashboard = () => {
     const [kpis, setKpis] = useState<InvoiceKPIs | null>(null);
     const [invoices, setInvoices] = useState<PendingInvoice[]>([]);
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [showSimulator, setShowSimulator] = useState(false);
     const [showRegistration, setShowRegistration] = useState(false);
     const [showEmailSettings, setShowEmailSettings] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('pending');
+    const [editingInvoice, setEditingInvoice] = useState<PendingInvoice | null>(null);
 
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -86,7 +84,6 @@ export const InvoiceDashboard = () => {
             console.error("Failed to fetch dashboard data", error);
         } finally {
             setLoading(false);
-            setRefreshing(false);
         }
     };
 
@@ -94,20 +91,66 @@ export const InvoiceDashboard = () => {
         fetchData();
     }, [user, activeTab]);
 
-    const handleManualResolve = async (id: string) => {
+    const canManageInvoice = (inv: PendingInvoice) => {
+        return checkAccess({
+            module: 'gestao_nfs',
+            action: 'edit',
+            resourceOwnerId: inv.registered_by,
+            resourceStatus: inv.status.toUpperCase()
+        });
+    };
+
+    const handleManualResolve = async (id: string, inv: PendingInvoice) => {
+        if (!canManageInvoice(inv)) {
+            alert("Você não tem permissão para conciliar esta nota.");
+            return;
+        }
+
         if (confirm("Deseja marcar esta nota como conciliada manualmente?")) {
+            const previousInvoices = [...invoices];
+            // Optimistic Update
+            setInvoices(prev => prev.filter(inv => inv.id !== id));
+            
             try {
                 await invoiceService.updateStatus(id, 'Conciliada');
-                fetchData(); // Refresh
+                // KPIs need full refresh
+                const targetFarmId = canViewAll ? undefined : user?.fazenda_id;
+                const newKpis = await invoiceService.getKPIs(targetFarmId);
+                setKpis(newKpis);
             } catch (e) {
-                alert("Erro ao atualizar status");
+                setInvoices(previousInvoices);
+                alert("Erro ao atualizar status. O registro foi restaurado.");
             }
         }
     }
 
-    const handleRefresh = () => {
-        setRefreshing(true);
-        fetchData();
+
+    const handleDelete = async (inv: PendingInvoice) => {
+        if (!canManageInvoice(inv)) {
+            alert("Você não tem permissão para excluir esta nota.");
+            return;
+        }
+
+        if (confirm("Tem certeza que deseja excluir este registro permanentemente?")) {
+            const id = inv.id;
+            const previousInvoices = [...invoices];
+            const previousKpis = kpis;
+
+            // Optimistic Update
+            setInvoices(prev => prev.filter(inv => inv.id !== id));
+
+            try {
+                await invoiceService.deleteInvoice(id);
+                // Refresh KPIs in background
+                const targetFarmId = canViewAll ? undefined : user?.fazenda_id;
+                const newKpis = await invoiceService.getKPIs(targetFarmId);
+                setKpis(newKpis);
+            } catch (e) {
+                setInvoices(previousInvoices);
+                setKpis(previousKpis);
+                alert("Erro ao excluir registro. O item foi restaurado na lista.");
+            }
+        }
     }
 
     if (!hasPermission('gestao_nfs')) {
@@ -116,7 +159,7 @@ export const InvoiceDashboard = () => {
                 <div className="max-w-md mx-auto bg-red-50 border border-red-200 rounded-xl p-8 shadow-sm">
                     <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-red-800 mb-2">Acesso Restrito</h2>
-                    <p className="text-red-600">Você não tem permissão para visualizar o Painel de NFs. Contate um administrador.</p>
+                    <p className="text-red-600">Você não tem permissão para visualizar o Pendencias de Entrada. Contate um administrador.</p>
                 </div>
             </div>
         );
@@ -127,34 +170,10 @@ export const InvoiceDashboard = () => {
 
             {/* Header */}
             <PageHeader
-                title="Painel de NFs"
+                title="Pendencias de Entrada"
                 subtitle="Monitoramento de notas recebidas na fazenda aguardando lançamento fiscal."
                 icon={ClipboardList}
             >
-                {canEdit && (
-                    <button
-                        onClick={() => setShowSimulator(true)}
-                        className="px-3 py-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg text-sm font-medium border border-purple-200"
-                    >
-                        Simular Unisystem
-                    </button>
-                )}
-                <button
-                    onClick={handleRefresh}
-                    className={`p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-all ${refreshing ? 'animate-spin' : ''}`}
-                    title="Atualizar dados"
-                >
-                    <RefreshCw className="w-5 h-5" />
-                </button>
-                {canEdit && (
-                    <button
-                        onClick={() => setShowRegistration(true)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Novo Registro
-                    </button>
-                )}
                 {(isAdmin || role?.permissoes?.gestao_nfs?.manage_notifications) && (
                     <button
                         onClick={() => setShowEmailSettings(true)}
@@ -165,24 +184,17 @@ export const InvoiceDashboard = () => {
                         <span className="hidden sm:inline">Notificações</span>
                     </button>
                 )}
+                {canEdit && (
+                    <button
+                        onClick={() => setShowRegistration(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Novo Registro
+                    </button>
+                )}
             </PageHeader>
 
-            <UnisystemSimulatorModal
-                isOpen={showSimulator}
-                onClose={() => setShowSimulator(false)}
-                pendingInvoices={invoices.filter(i => i.status === 'Pendente')}
-                onSuccess={handleRefresh}
-            />
-
-            <InvoiceRegistrationModal
-                isOpen={showRegistration}
-                onClose={() => setShowRegistration(false)}
-                onSuccess={handleRefresh}
-            />
-
-            {showEmailSettings && (
-                <EmailSettingsModal onClose={() => setShowEmailSettings(false)} />
-            )}
 
             {loading ? (
                 <div className="space-y-6">
@@ -311,7 +323,7 @@ export const InvoiceDashboard = () => {
                                         <th className="px-6 py-3">Número NF</th>
                                         <th className="px-6 py-3">Fornecedor</th>
                                         <th className="px-6 py-3">Fazenda</th>
-                                        <th className="px-6 py-3">Datas (Emissão / Chegada)</th>
+                                        <th className="px-6 py-3">Datas (E / C / Conciliação)</th>
                                         <th className="px-6 py-3">Status / Arquivo</th>
                                         <th className="px-6 py-3 text-right">Ações</th>
                                     </tr>
@@ -351,8 +363,13 @@ export const InvoiceDashboard = () => {
                                                     </td>
                                                     <td className="px-6 py-3 text-gray-500">
                                                         <div className="flex flex-col">
-                                                            <span>E: {new Date(inv.issue_date).toLocaleDateString()}</span>
-                                                            <span className="font-medium text-gray-700">C: {new Date(inv.delivery_date).toLocaleDateString()}</span>
+                                                            <span className="text-[11px]">E: {new Date(inv.issue_date).toLocaleDateString()}</span>
+                                                            <span className="font-medium text-gray-700 text-[11px]">C: {new Date(inv.delivery_date).toLocaleDateString()}</span>
+                                                            {inv.status === 'Conciliada' && inv.updated_at && (
+                                                                <span className="text-green-600 font-bold text-[11px] mt-1 flex items-center gap-1 bg-green-50 px-1.5 py-0.5 rounded-md self-start border border-green-100 italic">
+                                                                    <CheckCircle size={10} /> {new Date(inv.updated_at).toLocaleDateString()}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-3">
@@ -375,14 +392,35 @@ export const InvoiceDashboard = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-3 text-right">
-                                                        {activeTab === 'pending' && (
-                                                            <button
-                                                                onClick={() => handleManualResolve(inv.id)}
-                                                                className="text-blue-600 hover:text-blue-800 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            >
-                                                                Conciliar Manual
-                                                            </button>
-                                                        )}
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {activeTab === 'pending' && canManageInvoice(inv) && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditingInvoice(inv);
+                                                                            setShowRegistration(true);
+                                                                        }}
+                                                                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                                        title="Editar Nota"
+                                                                    >
+                                                                        <Pencil className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDelete(inv)}
+                                                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                                                        title="Excluir Registro"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleManualResolve(inv.id, inv)}
+                                                                        className="text-blue-600 hover:text-blue-800 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity ml-2"
+                                                                    >
+                                                                        Conciliar Manual
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             )
@@ -393,6 +431,20 @@ export const InvoiceDashboard = () => {
                         </div>
                     </div>
                 </>
+            )}
+
+            <InvoiceRegistrationModal
+                isOpen={showRegistration}
+                onClose={() => {
+                    setShowRegistration(false);
+                    setEditingInvoice(null);
+                }}
+                onSuccess={fetchData}
+                editingInvoice={editingInvoice}
+            />
+
+            {showEmailSettings && (
+                <EmailSettingsModal onClose={() => setShowEmailSettings(false)} />
             )}
         </div>
     );

@@ -1,5 +1,6 @@
 ---
 trigger: model_decision
+description: Use para criar e melhorar modulos Mobile.
 ---
 
 # Especialista Mobile PWA (Frontend App)

@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (userId) {
         const { data: userData, error } = await supabase
           .from('usuarios')
-          .select('*')
+          .select('*, fazenda:fazendas(nome)')
           .eq('id', userId)
           .single();
 
@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Buscar usuário pelo login
       const { data: usuarios, error } = await supabase
         .from('usuarios')
-        .select('*')
+        .select('*, fazenda:fazendas(nome)')
         .eq('login', loginStr)
         .eq('ativo', true);
 
@@ -190,18 +190,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Advanced Checks
     if (action === 'view') {
       if (perms.view_scope === 'ALL') return true;
-      if (perms.view_scope === 'OWN_ONLY') return resourceOwnerId === user.id;
+      if (perms.view_scope === 'OWN_ONLY') return !resourceOwnerId || resourceOwnerId === user.id;
       if (perms.view_scope === 'SAME_FARM') {
-        // If resource doesn't have a farm ID (e.g. global resource), assume visible or hidden?
-        // Usually list filters handle nulls, but for strict check:
-        // Central user (no farm_id) might see all? Or none? 
-        // Logic: specific farm user can only see same farm.
+        if (!resourceFarmId) return true; // General view access allowed
         if (user.fazenda_id && resourceFarmId) {
           return user.fazenda_id === resourceFarmId;
         }
-        // If user is central (no farm_id) and scope is SAME_FARM? 
-        // Usually SAME_FARM implies "Local" role. Central would have 'ALL'.
-        // But if assigned SAME_FARM, they see nothing or matching nulls. 
         return false;
       }
       return false;
@@ -209,8 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (action === 'edit') {
       if (perms.edit_scope === 'ALL') return true;
-      if (perms.edit_scope === 'OWN_ONLY') return resourceOwnerId === user.id;
+      if (perms.edit_scope === 'OWN_ONLY') return !resourceOwnerId || resourceOwnerId === user.id;
       if (perms.edit_scope === 'OWN_PENDING') {
+        if (!resourceOwnerId) return true;
         return resourceOwnerId === user.id && resourceStatus === 'PENDENTE';
       }
       return false;

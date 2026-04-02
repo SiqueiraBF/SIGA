@@ -1,8 +1,9 @@
 import React from 'react';
-import { Truck, Calendar, User, Gauge, Activity, Sprout, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Truck, Calendar, User, Gauge, Activity, Sprout, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import type { Abastecimento } from '../types';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { nuntecService } from '../services/nuntecService';
 
 // UI Kit
 import { ModalHeader } from './ui/ModalHeader';
@@ -15,12 +16,9 @@ interface FuelingDetailsModalProps {
   data?: Abastecimento;
 }
 
-export function FuelingDetailsModal({
-  isOpen,
-  onClose,
-  onConfirm,
-  data,
-}: FuelingDetailsModalProps) {
+export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: FuelingDetailsModalProps) {
+  const [isConfirming, setIsConfirming] = React.useState(false);
+
   if (!isOpen || !data) return null;
 
   return (
@@ -237,27 +235,43 @@ export function FuelingDetailsModal({
             <div className="w-full space-y-3">
               <button
                 onClick={async () => {
+                  console.log('[DEBUG] CONFIRMAR BAIXA CLICKED', data);
                   if (
                     window.confirm(
                       'Confirma o envio desta baixa para a Nuntec?\nCertifique-se que o Veículo, Operação e Cultura estão corretos.',
                     )
                   ) {
+                    setIsConfirming(true);
                     try {
-                      // The service handles defaults. In a full implementation we should fetch/store these.
-                      const newId = await import('../services/nuntecService').then(m => m.nuntecService.createFueling(data));
+                      console.log('[DEBUG] Starting createFueling...');
+                      const newId = await nuntecService.createFueling(data);
+                      console.log('[DEBUG] createFueling success:', newId);
 
                       alert(`✅ Sucesso! Baixa enviada para Nuntec.\nID Gerado: ${newId}`);
-                      onConfirm(newId);
+                      if (onConfirm) onConfirm(newId);
                       onClose();
                     } catch (error: any) {
+                      console.error('[DEBUG] createFueling error:', error);
                       alert('Erro na integração Nuntec:\n' + error.message);
+                    } finally {
+                      setIsConfirming(false);
                     }
                   }
                 }}
-                className="w-full py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-500/20 flex items-center justify-center gap-3 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                disabled={isConfirming}
+                className={`w-full py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-500/20 flex items-center justify-center gap-3 transition-all hover:scale-[1.01] active:scale-[0.99] ${isConfirming ? 'opacity-70 cursor-wait' : ''}`}
               >
-                <CheckCircle2 size={24} />
-                CONFIRMAR BAIXA (INTEGRADO)
+                {isConfirming ? (
+                   <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Processando...</span>
+                   </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={24} />
+                    CONFIRMAR BAIXA (INTEGRADO)
+                  </>
+                )}
               </button>
               <p className="text-center text-[10px] text-slate-400 px-4">
                 O comando será enviado diretamente para a API Nuntec.

@@ -11,8 +11,8 @@ export interface NuntecConfig {
 export const DEFAULTS = {
     BASE_URL: '/api/nuntec',
     START_DATE_SYNC: '2026-01-01T00:00:00',
-    AUTH_USER: 'bruno.siqueira',
-    AUTH_PASS: '98765412',
+    AUTH_USER: 'integracao.gerente',
+    AUTH_PASS: '54v0imuy',
 };
 
 // Specific type for Audit/Analysis (Supply Weight Measurement)

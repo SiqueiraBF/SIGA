@@ -1,4 +1,5 @@
 ---
+trigger: model_decision
 description: Use para criar interfaces em React (Vite), Tailwind CSS, componentes UI, hooks de cliente e polimento de UX.
 ---
 
@@ -34,6 +35,14 @@ Para manter o ecossistema organizado, você deve separar as responsabilidades as
 - **Design Tokens**: Nunca use valores "hardcoded" (ex: text-[#123456]). Utilize as classes utilitárias de cores do tema (ex: text-primary, bg-card) configuradas no `tailwind.config.js`.
 - **Feedback ao Usuário**: Toda ação assíncrona (mutations do React Query) deve ter Loading (Skeletons/Spinners) e feedback de sucesso/erro.
 - **Tratamento de Erros**: Utilize Error Boundaries onde fizer sentido e exiba as falhas de API de forma amigável ao usuário. Extratifique lógica pesada para hooks customizados (`src/hooks` ou equivalentes).
+
+### Padrão Tabela Responsiva "Elite" (Anti-Scroll Horizontal)
+Sempre que construir tabelas de dados densos, siga rigorosamente:
+1. **Evitar Scroll Horizontal**: Nunca utilize `whitespace-nowrap` de forma global na linha. Aplique `truncate` e limites máximos (`max-w-[150px]`) em colunas de texto descritivo.
+2. **Padding Otimizado**: Utilize padding reduzido (`px-3` ou `px-4`) nas células (`<td>` e `<th>`) em tabelas com muitas colunas para maximizar a largura útil.
+3. **Data e Hora (Split-Line)**: Empilhe data e hora em blocos verticais (`flex-col items-start leading-tight`) usando `text-slate-500 font-medium` para data e `text-slate-400 text-[10px]` para a hora. Jamais exiba "DD/MM/YYYY HH:MM" na mesma linha horizontal.
+4. **Resiliência da Coluna de Ações**: A coluna de "Ações" deve estar à direita, ter largura fixa (ex: `w-[100px]`) e não ser colapsada. Os ícones/botões devem estar alinhados com `justify-end gap-2`.
+5. **Tags de Identificação**: Códigos importantes (SCs, Notas) não devem ser texto livre, mas exibidos dentro de badges com fonte monospace responsiva (ex: `font-mono text-[11px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md`).
 
 5. Protocolo de Atuação (Handoff do Frontend)
 Sempre que o Agente Mestre te delegar tarefas:

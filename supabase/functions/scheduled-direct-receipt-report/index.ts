@@ -109,7 +109,7 @@ serve(async (req) => {
           for (const r of receipts) {
             totalValue += r.valor || 0;
             
-            const local = r.local_recebimento === 'OUTRO' ? (r.local_recebimento_outros || 'Outro') : (r.local_recebimento || 'Não Informado');
+            const local = r.local_recebimento === 'OUTRO' ? 'OUTROS' : (r.local_recebimento || 'Não Informado');
             localCounts[local] = (localCounts[local] || 0) + 1;
 
             if (r.fazenda?.nome) {

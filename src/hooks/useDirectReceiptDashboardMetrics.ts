@@ -78,7 +78,7 @@ export function useDirectReceiptDashboardMetrics(
             // 3. Ranking de Locais (Gráfico de Barras)
             const localMap = new Map<string, number>();
             receipts.forEach(r => {
-                const local = r.local_recebimento === 'outros' ? (r.local_recebimento_outros || 'Outros') : r.local_recebimento;
+                const local = r.local_recebimento === 'outros' ? 'OUTROS' : r.local_recebimento;
                 const localFormatted = local.toUpperCase();
                 localMap.set(localFormatted, (localMap.get(localFormatted) || 0) + 1);
             });

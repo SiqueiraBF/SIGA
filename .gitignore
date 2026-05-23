@@ -24,3 +24,15 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Security & Secrets
+.env.production
+.env.vercel
+.env.vercel.prod
+key.txt
+clean_key.txt
+checkUser.mjs
+test_role.mjs
+api/inspect_xml.ts
+*.xml
+*.txt

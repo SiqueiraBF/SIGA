@@ -1,10 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function getCors(req: Request) {
+    const origin = req.headers.get('Origin') || '';
+    const isAllowed = origin.includes('localhost') || origin.endsWith('nadiana.com.br') || origin.endsWith('vercel.app');
+    return {
+        'Access-Control-Allow-Origin': isAllowed ? origin : 'https://siga.nadiana.com.br',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    };
+}
+
 
 // Configuração do Azure AD
 const AZURE_CONFIG = {
@@ -30,7 +35,7 @@ interface EmailPayload {
 
 serve(async (req: Request) => {
     if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders });
+        return new Response('ok', { headers: getCors(req) });
     }
 
     try {
@@ -47,7 +52,7 @@ serve(async (req: Request) => {
         // 0. Validação de Segurança (Apenas Usuários Logados ou Service Role)
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
-            return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: getCors(req) });
         }
         
         const token = authHeader.replace('Bearer ', '');
@@ -63,7 +68,7 @@ serve(async (req: Request) => {
         }
 
         if (!isServiceRole && !isValidUser) {
-            return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: getCors(req) });
         }
 
         // 1. Validação de Segredos
@@ -72,7 +77,7 @@ serve(async (req: Request) => {
                 success: false,
                 error: `Configuração de segredos incompleta no Supabase.`,
             }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                headers: { ...getCors(req), 'Content-Type': 'application/json' },
                 status: 200,
             });
         }
@@ -98,7 +103,7 @@ serve(async (req: Request) => {
                 error: `Erro de Token Azure: ${tokenResponse.statusText}`,
                 graphError: errorText
             }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                headers: { ...getCors(req), 'Content-Type': 'application/json' },
                 status: 200,
             });
         }
@@ -165,7 +170,7 @@ serve(async (req: Request) => {
                 sender: sender,
                 graphError: errorData
             }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                headers: { ...getCors(req), 'Content-Type': 'application/json' },
                 status: 200,
             });
         }
@@ -175,14 +180,14 @@ serve(async (req: Request) => {
             success: true,
             message: 'Email sent successfully via sendMail',
         }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...getCors(req), 'Content-Type': 'application/json' },
             status: 200,
         });
 
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return new Response(JSON.stringify({ success: false, error: msg }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...getCors(req), 'Content-Type': 'application/json' },
             status: 200,
         });
     }

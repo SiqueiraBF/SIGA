@@ -1,17 +1,30 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function getCors(req: Request) {
+    const origin = req.headers.get('Origin') || '';
+    const isAllowed = origin.includes('localhost') || origin.endsWith('nadiana.com.br') || origin.endsWith('vercel.app');
+    return {
+        'Access-Control-Allow-Origin': isAllowed ? origin : 'https://siga.nadiana.com.br',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    };
+}
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: getCors(req) });
   }
 
   try {
+    // 0. Validação de Segurança (Apenas quem tiver a chave do CRON)
+    const cronHeader = req.headers.get('x-cron-secret') || req.headers.get('authorization')?.replace('Bearer ', '');
+    const validSecret = Deno.env.get('CRON_SECRET_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!cronHeader || cronHeader !== validSecret) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid CRON Secret' }), { status: 401, headers: getCors(req) });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -109,7 +122,10 @@ serve(async (req) => {
           for (const r of receipts) {
             totalValue += r.valor || 0;
             
-            const local = r.local_recebimento === 'OUTRO' ? 'OUTROS' : (r.local_recebimento || 'Não Informado');
+            const rawLocal = r.local_recebimento || 'Não Informado';
+            const local = (rawLocal.toUpperCase() === 'OUTRO' || rawLocal.toUpperCase() === 'OUTROS') 
+              ? 'OUTROS' 
+              : rawLocal.toUpperCase();
             localCounts[local] = (localCounts[local] || 0) + 1;
 
             if (r.fazenda?.nome) {
@@ -128,8 +144,10 @@ serve(async (req) => {
 
             const valFormat = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(r.valor || 0);
             const regFormat = new Date(r.created_at).toLocaleString('pt-BR');
-            const recFormat = r.data_recebimento ? new Date(r.data_recebimento).toLocaleDateString('pt-BR') : '-';
-            const emiFormat = r.data_emissao ? new Date(r.data_emissao).toLocaleDateString('pt-BR') : '-';
+            const recFormat = (r.data_recebimento && r.data_recebimento !== 'Não informada') 
+              ? r.data_recebimento.split('-').reverse().join('/') 
+              : '-';
+            const emiFormat = r.data_emissao ? r.data_emissao.split('-').reverse().join('/') : '-';
 
             csvRows.push([
               r.nota_fiscal || '-',
@@ -398,14 +416,14 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ success: true, processed: results }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...getCors(req), 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (error: any) {
     console.error('Erro na execução da função:', error);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...getCors(req), 'Content-Type': 'application/json' },
       status: 400,
     });
   }

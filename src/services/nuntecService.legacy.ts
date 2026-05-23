@@ -919,10 +919,9 @@ export const nuntecService = {
       );
 
       if (!response.ok) {
-        console.warn(
-          'Nuntec API request failed or not configured. Using Mock Data for demonstration.',
-        );
-        return mockTransfers(postos, existingAbastecimentos);
+        const errText = await response.text();
+        console.error('Nuntec API Error:', errText);
+        throw new Error('Falha ao conectar com a API da Nuntec. Verifique a configuração ou tente novamente.');
       }
 
       const xmlText = await response.text();

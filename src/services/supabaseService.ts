@@ -1,4 +1,6 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import type { Database } from '../types/database.types';
 import type {
   Solicitacao,
   Fazenda,
@@ -9,6 +11,9 @@ import type {
   AuditLog,
 } from '../types';
 
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
 export const db = {
   // Requests (Solicitações)
   async getRequests(user?: Usuario | null): Promise<Solicitacao[]> {
@@ -16,7 +21,7 @@ export const db = {
 
     const { data, error } = await supabase
       .from('solicitacoes')
-      .select('id, numero, data_abertura, status, prioridade, fazenda_id, usuario_id, created_at')
+      .select('id, numero, data_abertura, status, prioridade, fazenda_id, usuario_id, created_at, data_envio')
       .order('data_abertura', { ascending: false });
 
     if (error) {
@@ -331,7 +336,7 @@ export const db = {
     const { data, error } = await supabase
       .from('usuarios')
       .select(`
-        *,
+        id, nome, login, email, ativo, funcao_id, fazenda_id, last_login,
         funcao:funcoes(nome),
         fazenda:fazendas(nome)
       `)
@@ -347,15 +352,64 @@ export const db = {
     return data;
   },
 
-  async createUser(userData: Partial<Usuario>, creatorId: string): Promise<Usuario> {
-    const { data, error } = await supabase.from('usuarios').insert(userData).select().single();
+  async createUser(userData: Partial<Usuario> & { senha?: string }, creatorId: string): Promise<Usuario> {
+    if (!userData.senha) {
+      throw new Error('A senha é obrigatória para o cadastro de novos usuários.');
+    }
+
+    const email = userData.email || `${userData.login?.toLowerCase()}@nadiana.com.br`;
+
+    // 1. Invocar Edge Function para criar a conta no cofre (Server-Side com service_role)
+    const { data: functionData, error: functionError } = await supabase.functions.invoke('create-user', {
+      body: {
+        email: email,
+        password: userData.senha,
+        name: userData.nome
+      }
+    });
+
+    if (functionError || !functionData?.user) {
+      throw new Error(`Erro na Edge Function ao criar credenciais: ${functionError?.message || 'Resposta inválida'}`);
+    }
+
+    const authUserId = functionData.user.id;
+
+    // 2. Inserir o perfil na tabela pública
+    const newUserData = {
+      ...userData,
+      id: authUserId, // Forçar o mesmo ID gerado pelo Cofre
+      email: email
+    };
+    
+    // Garantir que a senha NUNCA seja enviada para a tabela pública
+    delete newUserData.senha;
+
+    const { data, error } = await supabase.from('usuarios').insert(newUserData).select().single();
 
     if (error) throw error;
     return data;
   },
 
-  async updateUser(userId: string, userData: Partial<Usuario>, modifierId: string): Promise<void> {
-    const { error } = await supabase.from('usuarios').update(userData).eq('id', userId);
+  async updateUser(userId: string, userData: Partial<Usuario> & { senha?: string }, modifierId: string): Promise<void> {
+    // Se a senha foi alterada, atualizamos ela no cofre de forma segura via Edge Function
+    if (userData.senha) {
+      const { error: functionError } = await supabase.functions.invoke('update-user-password', {
+        body: {
+          userId: userId,
+          password: userData.senha
+        }
+      });
+      if (functionError) {
+        console.error('Erro ao atualizar senha no cofre:', functionError);
+        throw new Error('Falha ao atualizar a senha criptografada.');
+      }
+    }
+    
+    // Remover senha do payload para não dar erro ao atualizar a tabela pública
+    const payloadForUpdate = { ...userData };
+    delete payloadForUpdate.senha;
+
+    const { error } = await supabase.from('usuarios').update(payloadForUpdate).eq('id', userId);
 
     if (error) throw error;
   },
@@ -401,7 +455,7 @@ export const db = {
   async getIntegrationConfig(): Promise<IntegrationConfig | null> {
     const { data, error } = await supabase
       .from('integration_settings')
-      .select('*')
+      .select('id, provider, is_active, username, base_url, sync_start_date')
       .eq('provider', 'NUNTEC')
       .maybeSingle();
 
@@ -417,7 +471,7 @@ export const db = {
       provider: data.provider,
       is_active: data.is_active,
       username: data.username,
-      password: data.password,
+      password: '***',
       base_url: data.base_url,
       sync_start_date: data.sync_start_date,
       // Default others if missing from DB schema version
@@ -431,15 +485,19 @@ export const db = {
     modifierId?: string,
   ): Promise<void> {
     // Map internal type to DB fields
-    const payload = {
+    const payload: any = {
       provider: 'NUNTEC',
       username: config.username,
-      password: config.password,
       base_url: config.base_url,
       sync_start_date: config.sync_start_date,
       is_active: config.is_active,
       updated_at: new Date().toISOString()
     };
+    
+    // Apenas enviar a senha se o usuário digitou uma nova
+    if (config.password && config.password !== '***') {
+      payload.password = config.password;
+    }
 
     // Upsert based on provider unique key
     const { error } = await supabase
@@ -529,6 +587,71 @@ export const db = {
     );
 
     return allLogs;
+  },
+
+  // Attachments (Anexos)
+  async getAttachmentsByRequestId(requestId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('solicitacao_anexos')
+      .select(`
+        *,
+        usuario:usuarios(nome)
+      `)
+      .eq('solicitacao_id', requestId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async uploadAttachment(
+    requestId: string,
+    file: File,
+    userId: string
+  ): Promise<any> {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${requestId}/${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('request-attachments')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data, error } = await supabase
+      .from('solicitacao_anexos')
+      .insert({
+        solicitacao_id: requestId,
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type,
+        file_size: file.size,
+        usuario_id: userId
+      })
+      .select(`
+        *,
+        usuario:usuarios(nome)
+      `)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteAttachment(attachmentId: string, filePath: string): Promise<void> {
+    const { error: storageError } = await supabase.storage
+      .from('request-attachments')
+      .remove([filePath]);
+
+    if (storageError) throw storageError;
+
+    const { error } = await supabase
+      .from('solicitacao_anexos')
+      .delete()
+      .eq('id', attachmentId);
+
+    if (error) throw error;
   },
 };
 

@@ -62,8 +62,8 @@ export function NuntecConfigModal({ isOpen, onClose, currentUser }: NuntecConfig
     setIsTesting(true);
 
     try {
-      if (!config.username || !config.password) {
-        throw new Error('Informe Usuário e Senha para testar.');
+      if (!config.username || !config.password || config.password === '***') {
+        throw new Error('Informe Usuário e Senha (nova) para testar a conexão.');
       }
 
       await nuntecService.testConnection(config);
@@ -85,8 +85,8 @@ export function NuntecConfigModal({ isOpen, onClose, currentUser }: NuntecConfig
     setIsSaving(true);
 
     try {
-      if (!config.username || !config.password || !config.sync_start_date) {
-        throw new Error('Todos os campos são obrigatórios.');
+      if (!config.username || !config.sync_start_date) {
+        throw new Error('Usuário e data de sincronização são obrigatórios.');
       }
 
       await db.saveIntegrationConfig(config, currentUser.id);

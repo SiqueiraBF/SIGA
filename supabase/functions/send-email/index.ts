@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -41,6 +42,28 @@ serve(async (req: Request) => {
 
         if (!to || !subject || !htmlBody) {
             throw new Error('Missing required fields (to, subject, htmlBody)');
+        }
+
+        // 0. Validação de Segurança (Apenas Usuários Logados ou Service Role)
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders });
+        }
+        
+        const token = authHeader.replace('Bearer ', '');
+        let isServiceRole = false;
+        let isValidUser = false;
+        
+        if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+            isServiceRole = true;
+        } else {
+            const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+            const { data: { user }, error: verifyError } = await supabaseAdmin.auth.getUser(token);
+            if (user && !verifyError) isValidUser = true;
+        }
+
+        if (!isServiceRole && !isValidUser) {
+            return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: corsHeaders });
         }
 
         // 1. Validação de Segredos

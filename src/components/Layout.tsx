@@ -23,7 +23,7 @@ export function Layout() {
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth">
-          <div className="container mx-auto p-4 md:p-6 max-w-7xl animate-in fade-in duration-500 pb-20 md:pb-6">
+          <div className="container mx-auto p-4 md:p-6 max-w-[1600px] animate-in fade-in duration-500 pb-20 md:pb-6">
             <Outlet />
           </div>
         </div>

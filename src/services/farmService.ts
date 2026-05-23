@@ -1,5 +1,11 @@
 import { supabase } from '../lib/supabase';
 
+export interface Farm {
+    id: string;
+    nome: string;
+    ativo: boolean;
+}
+
 export const farmService = {
     async getFarms() {
         const { data, error } = await supabase

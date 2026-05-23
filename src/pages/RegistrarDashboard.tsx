@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { dashboardService, DashboardStats } from '../services/dashboardService';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Package, Clock, CheckCircle2, AlertCircle, Calendar, Store, User } from 'lucide-react';
-import { startOfMonth, endOfMonth, subMonths, format, subDays, differenceInCalendarDays, isBefore } from 'date-fns';
+import { startOfMonth, endOfMonth, subMonths, format, subDays, differenceInCalendarDays, isBefore, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // Recharts
 import {
@@ -216,97 +217,153 @@ export function RegistrarDashboard({ hideHeader = false }: RegistrarDashboardPro
           </div>
 
           {/* Charts Row 1: Volume & Classification */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">
+          {(() => {
+            const isLongPeriod = differenceInCalendarDays(dateRange.end, dateRange.start) > 45;
 
-            {/* Volume por Dia */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">Volume Diário (Solicitações)</h3>
-              <div className="flex-1 w-full min-h-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stats.charts.daily_volume} style={{ outline: 'none' }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
-                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <Tooltip
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
-                    />
-                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                    <Line
-                      name="Total Criado"
-                      type="monotone"
-                      dataKey="total"
-                      stroke="#8b5cf6"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 2, stroke: '#fff' }}
-                      activeDot={{ r: 6 }}
-                    />
-                    <Line
-                      name="Finalizados"
-                      type="monotone"
-                      dataKey="finished"
-                      stroke="#10b981"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
-                    />
-                    <Line
-                      name="Devolvidos"
-                      type="monotone"
-                      dataKey="returned"
-                      stroke="#ef4444" // red-500
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+            const processedChartData = (() => {
+              if (!stats?.charts.daily_volume) return [];
 
-            {/* Classificação */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">Classificação dos Itens</h3>
-              <div className="flex-1 w-full min-h-0 relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart style={{ outline: 'none' }}>
-                    <Pie
-                      data={stats.charts.by_classification}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {stats.charts.by_classification.map((entry, index) => {
-                        const key = (entry.name || '').toLowerCase();
-                        let fill = '#94a3b8'; // default
-                        if (key.includes('novo')) fill = COLORS.novo;
-                        if (key.includes('reativado')) fill = COLORS.reativado;
-                        if (key.includes('existente')) fill = COLORS.existente;
-                        if (key.includes('corre') || key.includes('devo')) fill = COLORS.correcao;
+              if (!isLongPeriod) return stats.charts.daily_volume;
 
-                        return <Cell key={`cell-${index}`} fill={fill} strokeWidth={0} />;
-                      })}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <Legend
-                      verticalAlign="bottom"
-                      height={36}
-                      iconType="circle"
-                      formatter={(value) => <span className="text-xs font-bold text-slate-600 ml-1">{value}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center Text */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="text-center">
-                    <span className="block text-2xl font-black text-slate-700">{stats.overview.total_items}</span>
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase">Itens</span>
+              // Aggregate by month
+              const monthlyData: Record<string, any> = {};
+
+              stats.charts.daily_volume.forEach(day => {
+                try {
+                  // Try to parse ISO date from DB (YYYY-MM-DD)
+                  const date = parseISO(day.date);
+                  const monthYear = format(date, "MMM/yy", { locale: ptBR }).toUpperCase();
+
+                  if (!monthlyData[monthYear]) {
+                    monthlyData[monthYear] = { date: monthYear, total: 0, finished: 0, returned: 0 };
+                  }
+
+                  monthlyData[monthYear].total += day.total;
+                  monthlyData[monthYear].finished += day.finished;
+                  monthlyData[monthYear].returned += day.returned;
+                } catch (e) {
+                  // Fallback if date is not ISO
+                  if (!monthlyData[day.date]) {
+                    monthlyData[day.date] = { ...day };
+                  }
+                }
+              });
+
+              return Object.values(monthlyData);
+            })();
+
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">
+
+                {/* Volume por Dia / Mês */}
+                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">
+                    {isLongPeriod ? 'Evolução Mensal' : 'Volume Diário'} (Solicitações)
+                  </h3>
+                  <div className="flex-1 w-full min-h-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={processedChartData} style={{ outline: 'none' }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
+                        <XAxis
+                          dataKey="date"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#94a3b8', fontSize: 10 }}
+                          dy={10}
+                          tickFormatter={(value) => {
+                            if (!isLongPeriod) {
+                              try {
+                                return format(parseISO(value), 'dd/MM');
+                              } catch (e) {
+                                return value;
+                              }
+                            }
+                            return value; // Already formatted as MMM/YY
+                          }}
+                        />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                        <Line
+                          name="Total Criado"
+                          type="monotone"
+                          dataKey="total"
+                          stroke="#8b5cf6"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 2, stroke: '#fff' }}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line
+                          name="Finalizados"
+                          type="monotone"
+                          dataKey="finished"
+                          stroke="#10b981"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
+                        />
+                        <Line
+                          name="Devolvidos"
+                          type="monotone"
+                          dataKey="returned"
+                          stroke="#ef4444"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                {/* Classificação */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">Classificação dos Itens</h3>
+                  <div className="flex-1 w-full min-h-0 relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart style={{ outline: 'none' }}>
+                        <Pie
+                          data={stats.charts.by_classification}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {stats.charts.by_classification.map((entry, index) => {
+                            const key = (entry.name || '').toLowerCase();
+                            let fill = '#94a3b8'; // default
+                            if (key.includes('novo')) fill = COLORS.novo;
+                            if (key.includes('reativado')) fill = COLORS.reativado;
+                            if (key.includes('existente')) fill = COLORS.existente;
+                            if (key.includes('corre') || key.includes('devo')) fill = COLORS.correcao;
+
+                            return <Cell key={`cell-${index}`} fill={fill} strokeWidth={0} />;
+                          })}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Legend
+                          verticalAlign="bottom"
+                          height={36}
+                          iconType="circle"
+                          formatter={(value) => <span className="text-xs font-bold text-slate-600 ml-1">{value}</span>}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Center Text */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="text-center">
+                        <span className="block text-2xl font-black text-slate-700">{stats.overview.total_items}</span>
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase">Itens</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
+
 
           {/* Charts Row 2: Priority, Farm, User */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

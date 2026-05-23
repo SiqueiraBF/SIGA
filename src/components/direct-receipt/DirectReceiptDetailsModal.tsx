@@ -13,7 +13,7 @@ export function DirectReceiptDetailsModal({ isOpen, onClose, receipt }: DirectRe
     if (!isOpen || !receipt) return null;
 
     const dataRegistro = new Date(receipt.created_at);
-    const dataEmissao = new Date(receipt.data_emissao);
+    const dataEmissao = new Date(receipt.data_emissao + 'T00:00:00');
     const teveRecebimentoFisico = !!receipt.data_recebimento && 
                                   receipt.data_recebimento !== 'Não informada' && 
                                   receipt.data_recebimento !== '-';
@@ -23,7 +23,7 @@ export function DirectReceiptDetailsModal({ isOpen, onClose, receipt }: DirectRe
         try {
             // Se tiver hífen, assumimos que é ISO e formatamos por extenso
             if (receipt.data_recebimento.includes('-')) {
-                dataRecebimento = format(new Date(receipt.data_recebimento), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+                dataRecebimento = format(new Date(receipt.data_recebimento + 'T00:00:00'), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
             } else {
                 // Se não tiver hífen, assumimos que já pode estar formatada ou é outro padrão
                 dataRecebimento = receipt.data_recebimento;

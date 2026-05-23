@@ -39,7 +39,7 @@ export interface PendingInvoice {
 
   // Joins
   farm?: { nome: string };
-  user?: { nome: string };
+  usuario?: { nome: string };
   unisystem_supplier?: UnisystemSupplier;
   file_url?: string;
 }

@@ -217,6 +217,7 @@ export function GoodsReceiptExit({ embedded = false, refreshTrigger = 0 }: Goods
                 isOpen={isDetailsModalOpen}
                 onClose={() => setIsDetailsModalOpen(false)}
                 data={selectedExitData}
+                onUpdate={loadData}
             />
 
             <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>

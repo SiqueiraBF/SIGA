@@ -8,7 +8,7 @@ export const invoiceService = {
     async getInvoices(farmId?: string, status: 'Pendente' | 'Conciliada' | 'Cancelada' = 'Pendente'): Promise<PendingInvoice[]> {
         let query = supabase
             .from('pending_invoices')
-            .select('*, farm:fazendas(nome), unisystem_supplier:unisystem_suppliers(name, cnpj)')
+            .select('*, farm:fazendas(nome), unisystem_supplier:unisystem_suppliers(name, cnpj), usuario:registered_by(nome)')
             .eq('status', status)
             .order('delivery_date', { ascending: status === 'Pendente' });
 
@@ -24,33 +24,6 @@ export const invoiceService = {
         if (error) throw error;
 
         const invoices = data as unknown as PendingInvoice[];
-
-        // AUTO-CONCILIAÇÃO (Lazy) - Apenas para pendentes
-        if (status === 'Pendente') {
-            const confirmedPending: PendingInvoice[] = [];
-
-            for (const invoice of invoices) {
-                const { data: match } = await supabase
-                    .from('unisystem_invoices')
-                    .select('id')
-                    .eq('invoice_number', invoice.invoice_number)
-                    .or(invoice.supplier_cnpj
-                        ? `supplier_cnpj.eq.${invoice.supplier_cnpj}`
-                        : `supplier_name.ilike.${invoice.supplier_name}`)
-                    .maybeSingle();
-
-                if (match) {
-                    await supabase
-                        .from('pending_invoices')
-                        .update({ status: 'Conciliada' })
-                        .eq('id', invoice.id);
-                } else {
-                    confirmedPending.push(invoice);
-                }
-            }
-            return confirmedPending;
-        }
-
         return invoices;
     },
 

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { stockService } from '../services/stockService';
 import { db } from '../services/supabaseService';
 import { notificationService } from '../services/notificationService';
-import type { Material, StockRequest } from '../types';
+import type { Material, StockRequest, StockRequestCategory } from '../types';
 
 interface StockRequestFormProps {
     isOpen: boolean;
@@ -19,6 +19,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
     // State
     const [loading, setLoading] = useState(false);
     const [request, setRequest] = useState<StockRequest | null>(null);
+    const [category, setCategory] = useState<StockRequestCategory>('GERAL');
     const [items, setItems] = useState<{
         material: Material;
         qty: number;
@@ -56,13 +57,13 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
     useEffect(() => {
         const timer = setTimeout(() => {
             if (searchQuery.length > 2) {
-                stockService.getMaterials(searchQuery).then(setSearchResults);
+                stockService.getMaterials(searchQuery, category).then(setSearchResults);
             } else {
                 setSearchResults([]);
             }
         }, 300);
         return () => clearTimeout(timer);
-    }, [searchQuery]);
+    }, [searchQuery, category]);
 
     const loadFazendas = async () => {
         try {
@@ -84,6 +85,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
             if (reqData) {
                 setRequest(reqData);
+                setCategory(reqData.category || 'GERAL');
                 setNotes(reqData.notes || '');
                 setSelectedFazendaId(reqData.farm_id);
                 // Map DB items to Form items
@@ -106,6 +108,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
     const resetForm = () => {
         setRequest(null);
+        setCategory('GERAL');
         setItems([]);
         setSearchQuery('');
         setSelectedMaterial(null);
@@ -140,7 +143,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
     const handleAddItem = async () => {
         if (!selectedMaterial) return;
-        if (quantity <= 0) return alert("Quantidade deve ser maior que zero");
+        if (quantity <= 0 || !Number.isInteger(quantity)) return alert("Quantidade deve ser um número inteiro maior que zero");
         if (!user) return;
         if (!selectedFazendaId) return alert("Selecione a Filial antes de adicionar itens.");
 
@@ -156,7 +159,8 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                 currentRequest = await stockService.createRequest(
                     selectedFazendaId,
                     user.id,
-                    notes
+                    notes,
+                    category
                 );
                 setRequest(currentRequest);
             }
@@ -381,6 +385,39 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                         {/* Add Item Section */}
                         {canEdit && (
                             <div className="p-6 bg-white border-b border-slate-100 shadow-sm z-10">
+                                {/* Category Selection */}
+                                <div className="mb-6">
+                                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Categoria do Pedido</label>
+                                    <div className="flex gap-3">
+                                        {(['GERAL', 'SEGURANCA', 'UNIFORME'] as StockRequestCategory[]).map(cat => (
+                                            <button
+                                                key={cat}
+                                                onClick={() => {
+                                                    if (items.length > 0) {
+                                                        alert("Você não pode alterar a categoria após adicionar itens. Remova os itens primeiro.");
+                                                        return;
+                                                    }
+                                                    setCategory(cat);
+                                                }}
+                                                disabled={!!request} // Only allow change on NEW requests, or draft if no items? 
+                                                // Actually, if it's draft, we can allow change if items is 0
+                                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all ${
+                                                    category === cat 
+                                                        ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' 
+                                                        : (!!request || items.length > 0)
+                                                            ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-not-allowed'
+                                                            : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {cat === 'GERAL' && '📦 Geral'}
+                                                {cat === 'SEGURANCA' && '🦺 Segurança (EPI)'}
+                                                {cat === 'UNIFORME' && '👕 Uniformes'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {items.length > 0 && <p className="text-[10px] text-slate-400 mt-1.5">* Remova todos os itens para alterar a categoria.</p>}
+                                </div>
+
                                 <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase">
                                     <Plus size={16} className="text-blue-500" /> Adicionar Item
                                 </h3>
@@ -394,7 +431,13 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                             placeholder="Buscar produto por nome ou código..."
                                             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                             value={searchQuery}
-                                            onChange={e => setSearchQuery(e.target.value)}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setSearchQuery(val);
+                                                if (selectedMaterial && val !== selectedMaterial.name) {
+                                                    setSelectedMaterial(null);
+                                                }
+                                            }}
                                             disabled={!canEdit}
                                         />
 
@@ -433,11 +476,19 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                 <div className="relative">
                                                     <input
                                                         type="number"
-                                                        min="0.1"
-                                                        step="0.1"
+                                                        min="1"
+                                                        step="1"
                                                         className="w-full pl-3 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-center bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        value={quantity}
-                                                        onChange={e => setQuantity(Number(e.target.value))}
+                                                        value={quantity || ''}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            if (val === '') {
+                                                                setQuantity(0);
+                                                                return;
+                                                            }
+                                                            const parsed = parseInt(val, 10);
+                                                            setQuantity(isNaN(parsed) ? 0 : parsed);
+                                                        }}
                                                     />
                                                     <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">{selectedMaterial.unit}</span>
                                                 </div>
@@ -515,7 +566,47 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
                                                 {/* Requested */}
                                                 <div className="text-right">
-                                                    <div className="text-2xl font-bold text-slate-800">{item.qty}</div>
+                                                    {canEdit ? (
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            step="1"
+                                                            className="w-20 px-2 py-1 text-right text-xl font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                                            value={item.qty || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (val === '') {
+                                                                    setItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: 0 } : it));
+                                                                    return;
+                                                                }
+                                                                const parsed = parseInt(val, 10);
+                                                                const newQty = isNaN(parsed) ? 0 : parsed;
+                                                                setItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: newQty } : it));
+                                                            }}
+                                                            onBlur={async () => {
+                                                                if (item.qty <= 0 || isNaN(item.qty) || !Number.isInteger(item.qty)) {
+                                                                    alert("A quantidade deve ser um número inteiro maior que zero");
+                                                                    if (request) refreshItems(request.id);
+                                                                    return;
+                                                                }
+                                                                if (item.id) {
+                                                                    try {
+                                                                        await stockService.updateItemQuantity(item.id, item.qty);
+                                                                    } catch (err: any) {
+                                                                        console.error(err);
+                                                                        alert("Erro ao atualizar quantidade: " + err.message);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    (e.target as HTMLInputElement).blur();
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <div className="text-2xl font-bold text-slate-800">{item.qty}</div>
+                                                    )}
                                                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Solicitado</div>
                                                 </div>
 

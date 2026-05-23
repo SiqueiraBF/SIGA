@@ -38,6 +38,7 @@ import { TableActions } from '../components/ui/TableActions';
 
 type SortField =
   | 'numero'
+  | 'data_envio'
   | 'data_abertura'
   | 'fazenda'
   | 'prioridade'
@@ -86,7 +87,7 @@ export function RequestList() {
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
 
   // Sorting State
-  const [sortField, setSortField] = useState<SortField>('data_abertura');
+  const [sortField, setSortField] = useState<SortField>('data_envio');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Advanced Filter States (Managed by FilterBar children/advanced prop)
@@ -255,6 +256,10 @@ export function RequestList() {
       case 'data_abertura':
         aValue = new Date(a.data_abertura).getTime();
         bValue = new Date(b.data_abertura).getTime();
+        break;
+      case 'data_envio':
+        aValue = new Date(a.data_envio || a.data_abertura).getTime();
+        bValue = new Date(b.data_envio || b.data_abertura).getTime();
         break;
       case 'fazenda':
         aValue = a.fazenda_nome || '';
@@ -552,10 +557,10 @@ export function RequestList() {
                       </th>
                       <th
                         className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('data_abertura')}
+                        onClick={() => handleSort('data_envio')}
                       >
                         <div className="flex items-center gap-2">
-                          Data <SortIcon field="data_abertura" />
+                          Data <SortIcon field="data_envio" />
                         </div>
                       </th>
                       <th
@@ -625,10 +630,16 @@ export function RequestList() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-slate-700">
-                            {formatInSystemTime(req.data_abertura, 'dd/MM/yyyy')}{' '}
-                            <span className="text-slate-400 text-xs ml-1">
-                              {formatInSystemTime(req.data_abertura, 'HH:mm')}
-                            </span>
+                            {req.status === 'Aberto' ? (
+                              <span className="text-slate-400 font-medium">—</span>
+                            ) : (
+                              <>
+                                {formatInSystemTime(req.data_envio || req.data_abertura, 'dd/MM/yyyy')}{' '}
+                                <span className="text-slate-400 text-xs ml-1">
+                                  {formatInSystemTime(req.data_envio || req.data_abertura, 'HH:mm')}
+                                </span>
+                              </>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">

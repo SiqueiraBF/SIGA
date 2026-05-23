@@ -40,6 +40,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
     const [items, setItems] = useState<any[]>([]);
     const [editingItem, setEditingItem] = useState<any | null>(null);
     const [analystSelectedItem, setAnalystSelectedItem] = useState<any | null>(null);
+    const [attachments, setAttachments] = useState<any[]>([]);
 
     const isSubmittingRef = useRef(false);
 
@@ -76,6 +77,8 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             resourceStatus: 'PENDENTE'
         }));
 
+    const canEditAttachments = (contextData.status === 'Aberto' || contextData.status === 'Devolvido') && (isOwner || hasFullManagement);
+
     // Effects
     useEffect(() => {
         if (isOpen) {
@@ -107,6 +110,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         setEditingItem(null);
         setAnalystSelectedItem(null);
         setFullRequest(null);
+        setAttachments([]);
     };
 
     const loadDependencies = async () => {
@@ -131,6 +135,21 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             onClose();
         } finally {
             setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (currentRequestId) {
+            loadAttachments(currentRequestId);
+        }
+    }, [currentRequestId]);
+
+    const loadAttachments = async (id: string) => {
+        try {
+            const data = await db.getAttachmentsByRequestId(id);
+            setAttachments(data);
+        } catch (err) {
+            console.error('Error loading attachments:', err);
         }
     };
 
@@ -166,7 +185,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
                 usuario_id: ownerToSave,
                 fazenda_id: contextData.fazenda_id,
                 prioridade: contextData.prioridade,
-                observacao_geral: contextData.observacao,
+                observacao_geral: contextData.observacao?.toUpperCase(),
             };
 
             if (!reqId) {
@@ -185,7 +204,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
 
             if (action === 'SEND') {
                 if (items.length === 0) { alert("Adicione itens antes de enviar."); setLoading(false); return; }
-                await db.updateRequest(reqId, { status: 'Aguardando' }, user!.id);
+                await db.updateRequest(reqId, { status: 'Aguardando', data_envio: new Date().toISOString() }, user!.id);
                 alert('Solicitação enviada com sucesso!');
                 setContextData(prev => ({ ...prev, status: 'Aguardando' }));
                 onSave();
@@ -216,7 +235,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
                     setLoading(false);
                     return;
                 }
-                await db.updateRequest(reqId, { status: 'Aguardando' }, user!.id);
+                await db.updateRequest(reqId, { status: 'Aguardando', data_envio: new Date().toISOString() }, user!.id);
                 alert('Correção enviada para análise!');
                 setContextData(prev => ({ ...prev, status: 'Aguardando' }));
                 onSave();
@@ -281,9 +300,9 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             }
 
             const payload = {
-                descricao: data.descricao,
-                marca: data.marca,
-                referencia: data.referencia,
+                descricao: data.descricao?.toUpperCase(),
+                marca: data.marca?.toUpperCase(),
+                referencia: data.referencia?.toUpperCase(),
                 unidade: data.unidade,
                 status_item: 'Pendente' as const
             };
@@ -356,6 +375,67 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         }
     };
 
+    const handleUploadAttachment = async (file: File) => {
+        if (!canEditAttachments) {
+            alert('Anexos só podem ser incluídos em solicitações com status Rascunho ou Devolvido.');
+            return;
+        }
+        
+        if (!currentRequestId) {
+            if (!contextData.observacao || !contextData.observacao.trim()) {
+                alert('Preencha a Observação antes de adicionar anexos.');
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const newReq = await db.createRequest({
+                    usuario_id: user!.id,
+                    fazenda_id: contextData.fazenda_id,
+                    prioridade: contextData.prioridade,
+                    observacao_geral: contextData.observacao,
+                    status: 'Aberto'
+                }, [], user!.id);
+                setCreatedRequestId(newReq.id);
+                setContextData(prev => ({ ...prev, numero: newReq.numero }));
+                const newAttachment = await db.uploadAttachment(newReq.id, file, user!.id);
+                setAttachments(prev => [newAttachment, ...prev]);
+            } catch (err: any) {
+                alert('Erro ao criar rascunho para anexo: ' + err.message);
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const newAttachment = await db.uploadAttachment(currentRequestId, file, user!.id);
+            setAttachments(prev => [newAttachment, ...prev]);
+        } catch (err: any) {
+            alert('Erro no upload: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteAttachment = async (attachment: any) => {
+        if (!canEditAttachments) {
+            alert('Anexos só podem ser removidos em solicitações com status Rascunho ou Devolvido.');
+            return;
+        }
+        if (!confirm('Remover este anexo?')) return;
+        setLoading(true);
+        try {
+            await db.deleteAttachment(attachment.id, attachment.file_path);
+            setAttachments(prev => prev.filter(a => a.id !== attachment.id));
+        } catch (err: any) {
+            alert('Erro ao excluir: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         // State
         contextData, setContextData,
@@ -365,6 +445,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         isAuditOpen, setIsAuditOpen,
         editingItem, setEditingItem,
         analystSelectedItem, setAnalystSelectedItem,
+        attachments, setAttachments,
         currentRequestId,
         isSubmittingRef,
 
@@ -375,6 +456,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         isRegistrar,
         canEditContext,
         canEditItems,
+        canEditAttachments,
         canDelete,
         canReopen,
         hasFullManagement,
@@ -385,6 +467,8 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         handleDeleteItem,
         saveItem,
         analyzeItem,
+        handleUploadAttachment,
+        handleDeleteAttachment,
         user // Exposed for item creation logic
     };
 }

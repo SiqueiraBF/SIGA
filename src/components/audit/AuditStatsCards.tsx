@@ -13,7 +13,10 @@ interface AuditStatsCardsProps {
 
 export function AuditStatsCards({ stats }: AuditStatsCardsProps) {
     const coverageIsLow = stats.analysisCoverage < 90;
-    const differenceIsNegative = stats.totalDifference < -100;
+    
+    const diffPercent = stats.totalVolume > 0 ? (stats.totalDifference / stats.totalVolume) * 100 : 0;
+    const isCriticalLoss = diffPercent < -0.6;
+    const diffPercentFormatted = `${diffPercent >= 0 ? '+' : ''}${diffPercent.toFixed(2)}%`;
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in duration-300">
@@ -35,11 +38,11 @@ export function AuditStatsCards({ stats }: AuditStatsCardsProps) {
             />
             <KPICard
                 title="Volume Acumulado de Quebra"
-                value={`${stats.totalDifference.toLocaleString('pt-BR')} L`}
-                icon={<AlertOctagon className={differenceIsNegative ? 'text-red-600' : 'text-slate-400'} size={24} />}
-                iconBg={differenceIsNegative ? 'bg-red-50' : 'bg-slate-100'}
-                subtext="Diferença total (Físico vs NF)"
-                status={differenceIsNegative ? 'negative' : 'neutral'}
+                value={`${stats.totalDifference.toLocaleString('pt-BR')} L (${diffPercentFormatted})`}
+                icon={<AlertOctagon className={isCriticalLoss ? 'text-red-600' : 'text-slate-400'} size={24} />}
+                iconBg={isCriticalLoss ? 'bg-red-50' : 'bg-slate-100'}
+                subtext="Diferença total no período selecionado"
+                status={isCriticalLoss ? 'negative' : 'neutral'}
             />
         </div>
     );

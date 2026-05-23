@@ -17,7 +17,9 @@ interface DirectReceiptFormModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (items: Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>[]) => Promise<void>;
+    onUpdate?: (id: string, data: Partial<Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>>) => Promise<void>;
     fazendas: Fazenda[];
+    initialReceipt?: DirectReceipt | null;
 }
 
 interface PendingItem {
@@ -40,6 +42,8 @@ const LOCAL_OPTIONS = [
     { value: 'cantina', label: 'Cantina' },
     { value: 'armazem', label: 'Armazém' },
     { value: 'escritorio adm', label: 'Escritório ADM' },
+    { value: 'hangar', label: 'Hangar' },
+    { value: 'terceiros', label: 'Terceiros' },
     { value: 'outra unidade', label: 'Outra Unidade' },
     { value: 'outros', label: 'Outros' },
 ];
@@ -48,7 +52,9 @@ export function DirectReceiptFormModal({
     isOpen,
     onClose,
     onSave,
+    onUpdate,
     fazendas,
+    initialReceipt = null
 }: DirectReceiptFormModalProps) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -71,9 +77,22 @@ export function DirectReceiptFormModal({
     useEffect(() => {
         if (isOpen) {
             setPendingItems([]);
-            resetForm();
+            if (initialReceipt) {
+                setNotaFiscal(initialReceipt.nota_fiscal);
+                setFornecedor(initialReceipt.fornecedor);
+                setDataEmissao(initialReceipt.data_emissao);
+                setIsDateUnknown(initialReceipt.data_recebimento === 'Não informada');
+                setDataRecebimento(initialReceipt.data_recebimento === 'Não informada' ? new Date().toISOString().split('T')[0] : initialReceipt.data_recebimento);
+                setLocalRecebimento(initialReceipt.local_recebimento);
+                setLocalOutros(initialReceipt.local_recebimento_outros || '');
+                setResponsavel(initialReceipt.responsavel);
+                setValor(initialReceipt.valor.toString());
+                setObservacao(initialReceipt.observacao || '');
+            } else {
+                resetForm();
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, initialReceipt]);
 
     const resetForm = () => {
         setNotaFiscal('');
@@ -118,6 +137,31 @@ export function DirectReceiptFormModal({
     };
 
     const handleFinalSave = async () => {
+        if (initialReceipt) {
+            if (!notaFiscal || !fornecedor || !responsavel || !valor || !onUpdate) return;
+            setLoading(true);
+            try {
+                await onUpdate(initialReceipt.id, {
+                    nota_fiscal: notaFiscal,
+                    fornecedor,
+                    data_emissao: dataEmissao,
+                    data_recebimento: isDateUnknown ? 'Não informada' : dataRecebimento,
+                    local_recebimento: localRecebimento,
+                    local_recebimento_outros: localRecebimento === 'outros' ? localOutros : undefined,
+                    responsavel,
+                    valor: parseFloat(valor),
+                    observacao,
+                });
+                onClose();
+            } catch (error: any) {
+                console.error('Erro ao atualizar registro:', error);
+                alert(`Erro ao atualizar: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
         if (pendingItems.length === 0 || !user) return;
 
         setLoading(true);
@@ -164,6 +208,7 @@ export function DirectReceiptFormModal({
                         currentFarm={currentFarm}
                         userName={user?.nome}
                         LOCAL_OPTIONS={LOCAL_OPTIONS}
+                        isEditMode={!!initialReceipt}
                     />
 
                     <div className="flex-1 flex flex-col bg-slate-50/50 relative overflow-hidden">
@@ -212,12 +257,12 @@ export function DirectReceiptFormModal({
                                                         <td className="px-4 py-4 font-mono font-bold text-blue-600 text-xs italic">#{item.nota_fiscal}</td>
                                                         <td className="px-4 py-4 text-xs font-bold text-slate-700 uppercase truncate max-w-[140px]" title={item.fornecedor}>{item.fornecedor}</td>
                                                         <td className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">
-                                                            {item.data_emissao ? new Date(item.data_emissao + 'T12:00:00Z').toLocaleDateString() : '---'}
+                                                            {item.data_emissao ? item.data_emissao.split('-').reverse().join('/') : '---'}
                                                         </td>
                                                         <td className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">
                                                             {item.data_recebimento === 'Não informada' 
                                                                 ? 'NÃO INFO' 
-                                                                : new Date(item.data_recebimento + 'T12:00:00Z').toLocaleDateString()}
+                                                                : (item.data_recebimento ? item.data_recebimento.split('-').reverse().join('/') : '---')}
                                                         </td>
                                                         <td className="px-4 py-4 text-xs font-bold text-slate-500 uppercase truncate max-w-[110px]" title={item.local_recebimento === 'outros' ? item.local_recebimento_outros : item.local_recebimento}>
                                                             {item.local_recebimento === 'outros' ? item.local_recebimento_outros : item.local_recebimento}
@@ -261,7 +306,8 @@ export function DirectReceiptFormModal({
                     loading={loading}
                     onClose={onClose}
                     handleFinalSave={handleFinalSave}
-                    pendingCount={pendingItems.length}
+                    pendingCount={initialReceipt ? 1 : pendingItems.length}
+                    isEditMode={!!initialReceipt}
                 />
             </div>
         </div>

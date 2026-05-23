@@ -17,10 +17,18 @@ export default {
           900: '#1e3a8a',
           950: '#172554',
         },
+        siga: {
+          base: '#0B1120',    // Fundo escuro
+          card: '#1E293B',    // Fundo do card
+          green: '#22C55E',   // Agro/Sucesso
+          blue: '#38BDF8',    // Logística/Tech
+          yellow: '#EAB308'   // Grãos/Atenção
+        }
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',
         'slide-up': 'slideUp 0.4s ease-out',
+        'blob': 'blob 7s infinite',
       },
       keyframes: {
         fadeIn: {
@@ -31,6 +39,12 @@ export default {
           '0%': { transform: 'translateY(10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        blob: {
+          '0%': { transform: 'translate(0px, 0px) scale(1)' },
+          '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+          '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+          '100%': { transform: 'translate(0px, 0px) scale(1)' },
+        }
       },
     },
   },

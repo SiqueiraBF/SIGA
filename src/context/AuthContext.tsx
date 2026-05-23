@@ -4,7 +4,7 @@ import type { Usuario, Funcao, Modulo } from '../types';
 
 interface PermissionCheckParams {
   module: Modulo;
-  action: 'view' | 'edit' | 'confirm';
+  action: 'view' | 'edit' | 'confirm' | 'delete';
   resourceOwnerId?: string;
   resourceFarmId?: string;
   resourceStatus?: string;
@@ -34,7 +34,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUser = async () => {
     try {
-      const userId = localStorage.getItem('gravity_user_id');
+      // Tentativa de restaurar a sessão segura do Supabase Auth
+      const { data: { session } } = await supabase.auth.getSession();
+      let userId = session?.user?.id;
+
+      // Sem o fallback! Se não houver sessão do Supabase, o usuário NÃO entra.
+      if (!userId) {
+        setIsLoading(false);
+        return;
+      }
+
       if (userId) {
         const { data: userData, error } = await supabase
           .from('usuarios')
@@ -92,24 +101,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
 
-      // Buscar usuário pelo login
-      const { data: usuarios, error } = await supabase
-        .from('usuarios')
-        .select('*, fazenda:fazendas(nome)')
-        .eq('login', loginStr)
-        .eq('ativo', true);
+      const cleanLogin = loginStr.trim().toLowerCase();
 
-      if (error || !usuarios || usuarios.length === 0) {
-        setIsLoading(false);
-        return false;
+      if (!senha) {
+        throw new Error('Senha é obrigatória.');
       }
 
-      const foundUser = usuarios[0] as Usuario;
+      // Artificial delay para dificultar brute-force (client-side)
+      await new Promise(resolve => setTimeout(resolve, 800));
 
-      // Verificar senha (simples por enquanto - em produção usar bcrypt)
-      if (senha && foundUser.senha !== senha) {
+      // Usar a Autenticação Segura do Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: `${cleanLogin}@nadiana.com.br`,
+        password: senha.trim()
+      });
+
+      if (authError) {
+        console.error('Supabase Auth error:', authError);
         setIsLoading(false);
-        return false;
+        if (authError.message.includes('Too many requests') || authError.status === 429) {
+           throw new Error('Muitas tentativas falhas. Conta bloqueada temporariamente pelo servidor.');
+        }
+        throw new Error('Login ou senha incorretos.');
+      }
+
+      const userId = authData.user.id;
+
+      // Buscar perfil na tabela de usuários
+      const { data: userData, error } = await supabase
+        .from('usuarios')
+        .select('*, fazenda:fazendas(nome)')
+        .eq('id', userId)
+        .single();
+
+      if (error || !userData) {
+        console.error('Supabase query error:', error);
+        setIsLoading(false);
+        throw new Error('Perfil de usuário não encontrado no banco.');
+      }
+
+      const foundUser = userData as Usuario;
+
+      if (!foundUser.ativo) {
+        setIsLoading(false);
+        throw new Error('Usuário inativo.');
       }
 
       // Update Login Time
@@ -136,23 +171,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Salvar no localStorage
-      try {
-        localStorage.setItem('gravity_user_id', foundUser.id);
-      } catch (e) {
-        console.warn('LocalStorage error', e);
-      }
+      // O localStorage legado não é mais utilizado para acesso
 
       setIsLoading(false);
       return true;
-    } catch (e) {
+    } catch (e: any) {
       console.error('Login error', e);
       setIsLoading(false);
+      if (e instanceof Error) {
+        throw e;
+      }
       return false;
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch(e) {
+      console.error('Erro ao deslogar do supabase:', e);
+    }
     setUser(null);
     setRole(null);
     localStorage.removeItem('gravity_user_id');
@@ -213,6 +251,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (action === 'confirm') {
       return perms.can_confirm;
+    }
+
+    if (action === 'delete') {
+      const deleteScope = perms.delete_scope || 'NONE';
+      if (deleteScope === 'ALL') return true;
+      if (deleteScope === 'OWN_ONLY') return !resourceOwnerId || resourceOwnerId === user.id;
+      return false;
     }
 
     return false;

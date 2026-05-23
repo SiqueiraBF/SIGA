@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { pcmService, PcmRequest } from '../services/pcmService';
 import { farmService } from '../services/farmService';
-import { Plus, MapPin, Loader2, FileText, LayoutGrid, Settings, ClipboardList, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Building2, Loader2, FileText, LayoutGrid, Settings, ClipboardList, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Pencil, Trash2, BarChart3, XCircle } from 'lucide-react';
 import { Loading } from '../components/Loading';
 import { PageHeader } from '../components/ui/PageHeader';
 import { FilterBar } from '../components/ui/FilterBar';
@@ -10,6 +10,8 @@ import { PcmRequestModal } from '../components/pcm/PcmRequestModal';
 import { PcmConfirmModal } from '../components/pcm/PcmConfirmModal';
 import { PcmEmailSettingsModal } from '../components/pcm/PcmEmailSettingsModal';
 import { PcmDetailsModal } from '../components/pcm/PcmDetailsModal';
+import { PcmDashboard } from '../components/pcm/PcmDashboard';
+import { PcmCancelModal } from '../components/pcm/PcmCancelModal';
 import toast from 'react-hot-toast';
 
 type SortField = 'num_requisicao' | 'created_at' | 'fazenda' | 'usuario' | 'maquina' | 'prioridade' | 'status' | 'data_confirmacao';
@@ -32,13 +34,18 @@ export function PcmRequests() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PcmRequest | null>(null);
   const [requestToEdit, setRequestToEdit] = useState<PcmRequest | null>(null);
+  const [requestToCancel, setRequestToCancel] = useState<PcmRequest | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showOnlyMine, setShowOnlyMine] = useState(false);
+  const [activeTab, setActiveTab] = useState<'list' | 'dashboard'>('list');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [filterFarm, setFilterFarm] = useState('');
+  const [filterRequester, setFilterRequester] = useState('');
 
   useEffect(() => {
     loadFarms();
@@ -85,12 +92,31 @@ export function PcmRequests() {
     }
   };
 
+  const handleCancelClick = (req: PcmRequest) => {
+    setRequestToCancel(req);
+    setIsCancelModalOpen(true);
+  };
+
+  const handleConfirmCancel = async (motivo: string, req: PcmRequest) => {
+    try {
+      await pcmService.cancelRequest(req.id, motivo, { id: user?.id || '', email: user?.email || '' });
+      toast.success('Solicitação cancelada com sucesso!');
+      loadRequests();
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao cancelar solicitação');
+      throw error; // Propagate to modal to stop loading state
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'PENDING_ALMOXARIFADO':
         return 'bg-amber-50 text-amber-600 border-amber-200';
       case 'COMPLETED':
         return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+      case 'CANCELLED':
+        return 'bg-red-50 text-red-600 border-red-200';
       default:
         return 'bg-slate-50 text-slate-500 border-slate-200';
     }
@@ -102,6 +128,8 @@ export function PcmRequests() {
         return 'AGUARDANDO';
       case 'COMPLETED':
         return 'FINALIZADA';
+      case 'CANCELLED':
+        return 'CANCELADA';
       default:
         return 'DESCONHECIDO';
     }
@@ -130,11 +158,17 @@ export function PcmRequests() {
   const filteredRequests = requests.filter(req => {
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
-      return req.num_requisicao.toString().includes(searchLower) || 
+      const matchSearch = req.num_requisicao.toString().includes(searchLower) || 
+             (req.sc_numero && req.sc_numero.toString().toLowerCase().includes(searchLower)) ||
              req.fazenda?.nome?.toLowerCase().includes(searchLower) ||
              req.usuario?.nome?.toLowerCase().includes(searchLower) ||
              req.maquina.toLowerCase().includes(searchLower);
+      if (!matchSearch) return false;
     }
+
+    if (filterFarm && req.fazenda?.nome !== filterFarm) return false;
+    if (filterRequester && req.usuario?.nome !== filterRequester) return false;
+
     if (showOnlyMine && user && req.created_by !== user.id) return false;
 
     // Filtro de Visualização por Filial
@@ -228,27 +262,62 @@ export function PcmRequests() {
 
       <div className="border-b border-slate-200 mt-2">
         <div className="flex gap-8">
-          <button className="pb-4 text-sm font-bold flex items-center gap-2 border-b-2 border-blue-600 text-blue-600 transition-colors">
+          <button 
+            onClick={() => setActiveTab('list')}
+            className={`pb-4 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'list' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
             <FileText size={16} />
             Lista de Solicitações
           </button>
-          <button className="pb-4 text-sm font-bold flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors">
-            <LayoutGrid size={16} />
-            Visão Geral
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className={`pb-4 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'dashboard' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <BarChart3 size={16} />
+            Indicadores (Dashboard)
           </button>
         </div>
       </div>
 
-      <FilterBar
+      {activeTab === 'list' ? (
+        <>
+          <FilterBar
         onSearch={setSearchTerm}
         searchValue={searchTerm}
-        searchPlaceholder="Buscar por REQUISIÇÃO, Unidade ou Solicitante..."
-        onClear={() => setSearchTerm('')}
-        hasActiveFilters={!!searchTerm || showOnlyMine}
+        searchPlaceholder="Buscar por REQUISIÇÃO, SC, Filial ou Solicitante..."
+        onClear={() => {
+          setSearchTerm('');
+          setShowOnlyMine(false);
+          setFilterFarm('');
+          setFilterRequester('');
+        }}
+        hasActiveFilters={!!searchTerm || showOnlyMine || !!filterFarm || !!filterRequester}
       >
+          <select
+            value={filterFarm}
+            onChange={(e) => setFilterFarm(e.target.value)}
+            className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+          >
+            <option value="">Todas as Filiais</option>
+            {farms.map(f => (
+              <option key={f.id} value={f.nome}>{f.nome}</option>
+            ))}
+          </select>
+          
+          <select
+            value={filterRequester}
+            onChange={(e) => setFilterRequester(e.target.value)}
+            className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+          >
+            <option value="">Todos os Solicitantes</option>
+            {Array.from(new Set(requests.map(r => r.usuario?.nome).filter(Boolean))).sort().map(nome => (
+              <option key={nome as string} value={nome as string}>{nome as string}</option>
+            ))}
+          </select>
+
           <button
             onClick={() => setShowOnlyMine(!showOnlyMine)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm h-full ${showOnlyMine
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm h-full whitespace-nowrap ${showOnlyMine
               ? 'bg-blue-600 text-white shadow-md'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
@@ -294,11 +363,11 @@ export function PcmRequests() {
                     </div>
                   </th>
                   <th 
-                    className="px-4 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                    className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
                     onClick={() => handleSort('fazenda')}
                   >
                     <div className="flex items-center gap-2">
-                      Unidade <SortIcon field="fazenda" />
+                      Filial <SortIcon field="fazenda" />
                     </div>
                   </th>
                   <th 
@@ -360,10 +429,12 @@ export function PcmRequests() {
                         <span className="text-slate-400 text-[10px]">{new Date(req.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-4 max-w-[140px]">
-                      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-700 truncate">
-                        <MapPin size={13} className="text-slate-400 shrink-0" />
-                        <span className="truncate" title={req.fazenda?.nome}>{req.fazenda?.nome || '-'}</span>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <Building2 size={14} className="text-slate-700" />
+                        <span className="text-slate-700 font-medium truncate" title={req.fazenda?.nome}>
+                          {req.fazenda?.nome || 'N/A'}
+                        </span>
                       </div>
                     </td>
                     <td className="px-3 py-4">
@@ -423,6 +494,18 @@ export function PcmRequests() {
                             <Pencil size={18} />
                           </button>
                         )}
+                        {req.status === 'PENDING_ALMOXARIFADO' && user && req.created_by === user.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelClick(req);
+                            }}
+                            className="p-2 text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-lg transition-all shadow-sm active:scale-95"
+                            title="Cancelar Solicitação"
+                          >
+                            <XCircle size={18} />
+                          </button>
+                        )}
                         {canDelete && (
                           <button
                             onClick={(e) => {
@@ -458,6 +541,10 @@ export function PcmRequests() {
           </div>
         </div>
       )}
+        </>
+      ) : (
+        <PcmDashboard />
+      )}
 
       <PcmRequestModal
         isOpen={isCreateModalOpen}
@@ -492,6 +579,16 @@ export function PcmRequests() {
           setSelectedRequest(null);
         }}
         request={selectedRequest}
+      />
+
+      <PcmCancelModal
+        isOpen={isCancelModalOpen}
+        onClose={() => {
+          setIsCancelModalOpen(false);
+          setRequestToCancel(null);
+        }}
+        onConfirm={handleConfirmCancel}
+        request={requestToCancel}
       />
     </div>
   );

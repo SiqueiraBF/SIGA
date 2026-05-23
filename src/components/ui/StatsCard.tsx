@@ -2,7 +2,7 @@ import { LucideIcon } from 'lucide-react';
 
 interface StatsCardProps {
   title: string;
-  value: string | number;
+  value: React.ReactNode;
   icon: LucideIcon;
   description?: React.ReactNode;
   variant?: 'default' | 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'orange' | 'destructive' | 'warning';
@@ -115,9 +115,11 @@ export default function StatsCard({
                 ${isClickable ? `cursor-pointer hover:scale-[1.02] hover:shadow-md hover:${style.ring} ring-0 hover:ring-2` : ''}
             `}
     >
-      <div className="flex items-center justify-between mb-2">
-        <Icon className={style.iconColor} size={24} />
-        <span className={`text-3xl font-bold ${style.textColor}`}>{value}</span>
+      <div className="flex items-center justify-between mb-2 gap-4">
+        <Icon className={`${style.iconColor} shrink-0`} size={24} />
+        <div className={`text-3xl font-bold ${style.textColor} flex-1 min-w-0 text-right truncate`} title={typeof value === 'string' ? value : undefined}>
+          {value}
+        </div>
       </div>
       <p className={`text-sm font-bold uppercase tracking-wider ${style.textColor}`}>{title}</p>
       {description && (

@@ -10,6 +10,7 @@ import { AlertTriangle, Clock, FileText, CheckCircle, Plus, Search, RefreshCw, H
 import { useAuth } from '../context/AuthContext';
 import { InvoiceRegistrationModal } from '../components/invoices/InvoiceRegistrationModal';
 import { EmailSettingsModal } from '../components/invoices/EmailSettingsModal';
+import { InvoiceDetailsModal } from '../components/invoices/InvoiceDetailsModal';
 import { FilterBar } from '../components/ui/FilterBar';
 import { formatCurrency } from '../utils/formatUtils';
 import { parseISO, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
@@ -30,6 +31,8 @@ export const InvoiceDashboard = () => {
     const [showEmailSettings, setShowEmailSettings] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('pending');
     const [editingInvoice, setEditingInvoice] = useState<PendingInvoice | null>(null);
+    const [selectedInvoice, setSelectedInvoice] = useState<PendingInvoice | null>(null);
+    const [showDetails, setShowDetails] = useState(false);
 
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -222,7 +225,7 @@ export const InvoiceDashboard = () => {
                         />
                         <StatsCard
                             title="Data Mais Antiga"
-                            value={kpis?.oldest_pending_date ? new Date(kpis.oldest_pending_date).toLocaleDateString() : '-'}
+                            value={kpis?.oldest_pending_date ? kpis.oldest_pending_date.split('T')[0].split('-').reverse().join('/') : '-'}
                             icon={AlertTriangle}
                             description="atenção a este item"
                             variant="red"
@@ -340,9 +343,19 @@ export const InvoiceDashboard = () => {
                                         </tr>
                                     ) : (
                                         filteredInvoices.map((inv) => {
-                                            const daysDelayed = Math.floor((new Date().getTime() - new Date(inv.delivery_date).getTime()) / (1000 * 3600 * 24));
+                                            const deliveryDate = new Date(inv.delivery_date);
+                                            const isInvalidDate = deliveryDate.getFullYear() < 2000;
+                                            const daysDelayed = isInvalidDate ? 0 : Math.max(0, Math.floor((new Date().getTime() - deliveryDate.getTime()) / (1000 * 3600 * 24)));
+                                            
                                             return (
-                                                <tr key={inv.id} className="hover:bg-gray-50 transition-colors group">
+                                                <tr 
+                                                    key={inv.id} 
+                                                    className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                                                    onClick={() => {
+                                                        setSelectedInvoice(inv);
+                                                        setShowDetails(true);
+                                                    }}
+                                                >
                                                     <td className="px-6 py-3 font-medium text-gray-900">
                                                         {inv.invoice_number}
                                                         {inv.amount && (
@@ -363,8 +376,11 @@ export const InvoiceDashboard = () => {
                                                     </td>
                                                     <td className="px-6 py-3 text-gray-500">
                                                         <div className="flex flex-col">
-                                                            <span className="text-[11px]">E: {new Date(inv.issue_date).toLocaleDateString()}</span>
-                                                            <span className="font-medium text-gray-700 text-[11px]">C: {new Date(inv.delivery_date).toLocaleDateString()}</span>
+                                                            <span className="text-[11px]">E: {inv.issue_date.split('-').reverse().join('/')}</span>
+                                                            <span className={`font-medium text-[11px] ${isInvalidDate ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                                                                C: {inv.delivery_date.split('-').reverse().join('/')}
+                                                                {isInvalidDate && " (Ano Inválido)"}
+                                                            </span>
                                                             {inv.status === 'Conciliada' && inv.updated_at && (
                                                                 <span className="text-green-600 font-bold text-[11px] mt-1 flex items-center gap-1 bg-green-50 px-1.5 py-0.5 rounded-md self-start border border-green-100 italic">
                                                                     <CheckCircle size={10} /> {new Date(inv.updated_at).toLocaleDateString()}
@@ -375,9 +391,15 @@ export const InvoiceDashboard = () => {
                                                     <td className="px-6 py-3">
                                                         <div className="flex flex-col gap-1 items-start">
                                                             {activeTab === 'pending' ? (
-                                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${daysDelayed > 5 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                                    {daysDelayed} dias atraso
-                                                                </span>
+                                                                isInvalidDate ? (
+                                                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-100">
+                                                                        Erro na Data
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${daysDelayed > 5 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                                        {daysDelayed} dias atraso
+                                                                    </span>
+                                                                )
                                                             ) : (
                                                                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                                                                     Conciliada
@@ -385,18 +407,25 @@ export const InvoiceDashboard = () => {
                                                             )}
 
                                                             {inv.file_url && (
-                                                                <a href={inv.file_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                                                <a 
+                                                                    href={inv.file_url} 
+                                                                    target="_blank" 
+                                                                    rel="noreferrer" 
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                                                >
                                                                     <Paperclip className="w-3 h-3" /> Ver Anexo
                                                                 </a>
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-3 text-right">
+                                                    <td className="px-6 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                                                         <div className="flex items-center justify-end gap-2">
                                                             {activeTab === 'pending' && canManageInvoice(inv) && (
                                                                 <>
                                                                     <button
-                                                                        onClick={() => {
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
                                                                             setEditingInvoice(inv);
                                                                             setShowRegistration(true);
                                                                         }}
@@ -406,14 +435,20 @@ export const InvoiceDashboard = () => {
                                                                         <Pencil className="w-4 h-4" />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => handleDelete(inv)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDelete(inv);
+                                                                        }}
                                                                         className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                                                                         title="Excluir Registro"
                                                                     >
                                                                         <Trash2 className="w-4 h-4" />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => handleManualResolve(inv.id, inv)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleManualResolve(inv.id, inv);
+                                                                        }}
                                                                         className="text-blue-600 hover:text-blue-800 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity ml-2"
                                                                     >
                                                                         Conciliar Manual
@@ -445,6 +480,17 @@ export const InvoiceDashboard = () => {
 
             {showEmailSettings && (
                 <EmailSettingsModal onClose={() => setShowEmailSettings(false)} />
+            )}
+
+            {showDetails && selectedInvoice && (
+                <InvoiceDetailsModal
+                    isOpen={showDetails}
+                    invoice={selectedInvoice}
+                    onClose={() => {
+                        setShowDetails(false);
+                        setSelectedInvoice(null);
+                    }}
+                />
             )}
         </div>
     );

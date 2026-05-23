@@ -14,6 +14,7 @@ interface PendingItem {
     supplier: string;
     entry_at: string;
     destination_farm_id: string;
+    operation_type: 'COMPRA' | 'CONSERTO' | 'RETORNO_CONSERTO';
 }
 
 export function MobileGoodsExit() {
@@ -31,6 +32,7 @@ export function MobileGoodsExit() {
     const [selectedItensIds, setSelectedItensIds] = useState<Set<string>>(new Set());
     const [motorista, setMotorista] = useState('');
     const [dataSaida, setDataSaida] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+    const [observacao, setObservacao] = useState('');
 
     // 1. Initial Load: Get farms & pending items
     useEffect(() => {
@@ -103,7 +105,7 @@ export function MobileGoodsExit() {
                 destination_farm_id: fazendaSelecionadaId,
                 driver_name: motorista.trim(),
                 exit_date: new Date(dataSaida).toISOString(),
-                observation: '', // Mobile simplification
+                observation: observacao.trim(),
                 created_by: user.id
             });
 
@@ -150,7 +152,7 @@ export function MobileGoodsExit() {
                         <h1 className="text-xl font-black flex items-center gap-2">
                             <Truck size={20} className="text-indigo-200" /> Expedição / Saída
                         </h1>
-                        <p className="text-xs text-indigo-200 font-medium">Despachar mercadorias p/ Fazendas</p>
+                        <p className="text-xs text-indigo-200 font-medium">Despachar mercadorias p/ Fazendas ou Fornecedores</p>
                     </div>
                 </div>
             </header>
@@ -160,7 +162,7 @@ export function MobileGoodsExit() {
                 {/* 1. Escolha de Rota (Fazenda Destino) */}
                 <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-2 pl-1 flex items-center gap-1.5">
-                        <MapPin size={12} className="text-indigo-500" /> Para onde vai a carga? *
+                        <MapPin size={12} className="text-indigo-500" /> Qual a Rota (Fazenda)? *
                     </label>
                     <div className="relative">
                         <select
@@ -237,9 +239,16 @@ export function MobileGoodsExit() {
                                                         <span className={`font-black tracking-tight ${isSelected ? 'text-indigo-900 text-lg' : 'text-slate-700 text-base'}`}>
                                                             {item.invoice_number}
                                                         </span>
+                                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
+                                                            item.operation_type === 'CONSERTO' 
+                                                                ? 'bg-amber-100 text-amber-700' 
+                                                                : 'bg-emerald-100 text-emerald-700'
+                                                        }`}>
+                                                            {item.operation_type === 'CONSERTO' ? 'CONSERTO' : 'COMPRA'}
+                                                        </span>
                                                     </div>
                                                     <p className={`text-xs font-medium leading-snug line-clamp-1 ${isSelected ? 'text-indigo-700' : 'text-slate-500'}`}>
-                                                        {item.supplier}
+                                                        {item.operation_type === 'CONSERTO' ? `Para: ${item.supplier}` : `De: ${item.supplier}`}
                                                     </p>
 
                                                     {/* Badge de Horário de Entrada (Retenção visualiza que tá esperando desde X hora) */}
@@ -286,6 +295,19 @@ export function MobileGoodsExit() {
                                             value={dataSaida}
                                             onChange={e => setDataSaida(e.target.value)}
                                             className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm font-semibold text-slate-700"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1 pl-1 flex items-center gap-1.5">
+                                            Observações (Opcional)
+                                        </label>
+                                        <textarea
+                                            value={observacao}
+                                            onChange={e => setObservacao(e.target.value)}
+                                            placeholder="Ex: Lacre da transportadora, detalhes do veículo..."
+                                            rows={2}
+                                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm text-slate-700 placeholder:text-slate-400 resize-none"
                                         />
                                     </div>
                                 </section>

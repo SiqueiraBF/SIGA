@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { fuelService } from '../services/fuelService';
 import type { Posto } from '../types';
-import { Plus, Warehouse, CheckCircle2, Building2, Settings, Cloud, Database, AlertTriangle } from 'lucide-react';
+import { Plus, Warehouse, CheckCircle2, Building2, Settings, Cloud, Database, Clock, Droplet, Scale } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { differenceInHours, parseISO } from 'date-fns';
 
@@ -46,7 +46,7 @@ export function StationManagement() {
     state: { viewType, selectedFazenda, filterStatus, monitoringFilter, searchTerm },
     setters: { setViewType, setSelectedFazenda, setFilterStatus, setMonitoringFilter, setSearchTerm },
     computed: { currentViewPostos, filteredPostos, monitoredCount }
-  } = useStationFilters(postos, measurements);
+  } = useStationFilters(postos, measurements, admeasurements, drainageData, stationData);
 
   // Local UI State for Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -153,7 +153,7 @@ export function StationManagement() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {viewType === 'FISICO' ? (
           <>
             <StatsCard
@@ -167,33 +167,53 @@ export function StationManagement() {
             />
 
             <StatsCard
-              title="MONITORAMENTO EM DIA"
-              value={`${currentViewPostos.filter(p => {
-                if (!p.nuntec_reservoir_id) return false;
-                const m = measurements.find(m => String(m['reservoir-id']) === String(p.nuntec_reservoir_id));
-                if (!m) return false;
-                return differenceInHours(new Date(), parseISO(m['measured-at'])) < 48;
-              }).length} / ${monitoredCount}`}
-              icon={CheckCircle2}
-              description="Tanques Atualizados (<48h)"
-              variant={monitoringFilter === 'ok' ? 'green' : 'default'}
-              onClick={() => setMonitoringFilter(monitoringFilter === 'ok' ? null : 'ok')}
-              className={monitoringFilter === 'ok' ? 'ring-2 ring-green-200' : 'hover:bg-green-50 cursor-pointer'}
-            />
-
-            <StatsCard
-              title="ATENÇÃO NECESSÁRIA"
+              title="MEDIÇÃO ATRASADA"
               value={currentViewPostos.filter(p => {
                 if (!p.nuntec_reservoir_id) return false;
                 const m = measurements.find(m => String(m['reservoir-id']) === String(p.nuntec_reservoir_id));
                 if (!m) return true;
                 return differenceInHours(new Date(), parseISO(m['measured-at'])) >= 48;
               }).length}
-              icon={AlertTriangle}
+              icon={Clock}
               description="Sem medição > 48h"
               variant={monitoringFilter === 'late' ? 'red' : 'default'}
               onClick={() => setMonitoringFilter(monitoringFilter === 'late' ? null : 'late')}
               className={monitoringFilter === 'late' ? 'ring-2 ring-red-200' : 'hover:bg-red-50 cursor-pointer'}
+            />
+
+            <StatsCard
+              title="DRENAGEM ATRASADA"
+              value={currentViewPostos.filter(p => {
+                if (p.exibir_na_drenagem === false) return false;
+                const lastDrainage = drainageData[p.id];
+                if (!lastDrainage) return true;
+                const days = differenceInHours(new Date(), new Date(lastDrainage)) / 24;
+                return days > 7;
+              }).length}
+              icon={Droplet}
+              description="Sem drenagem > 7 dias"
+              variant={monitoringFilter === 'drainage_late' ? 'orange' : 'default'}
+              onClick={() => setMonitoringFilter(monitoringFilter === 'drainage_late' ? null : 'drainage_late')}
+              className={monitoringFilter === 'drainage_late' ? 'ring-2 ring-orange-200' : 'hover:bg-orange-50 cursor-pointer'}
+            />
+
+            <StatsCard
+              title="AFERIÇÃO ATRASADA"
+              value={currentViewPostos.filter(p => {
+                if (!p.nuntec_reservoir_id) return false;
+                const reservoirData = stationData.find(r => String(r.id) === String(p.nuntec_reservoir_id)) ||
+                    stationData.find(r => r.nozzleIds?.includes(String(p.nuntec_reservoir_id)));
+                if (!reservoirData) return false;
+                const latestAdmeasurement = admeasurements.find(a => reservoirData.nozzleIds?.includes(a['nozzle-id']));
+                if (!latestAdmeasurement) return true;
+                const days = differenceInHours(new Date(), parseISO(latestAdmeasurement['updated-at'])) / 24;
+                return days > 60;
+              }).length}
+              icon={Scale}
+              description="Sem aferição > 60 dias"
+              variant={monitoringFilter === 'admeasurement_late' ? 'red' : 'default'}
+              onClick={() => setMonitoringFilter(monitoringFilter === 'admeasurement_late' ? null : 'admeasurement_late')}
+              className={monitoringFilter === 'admeasurement_late' ? 'ring-2 ring-red-200' : 'hover:bg-red-50 cursor-pointer'}
             />
           </>
         ) : (

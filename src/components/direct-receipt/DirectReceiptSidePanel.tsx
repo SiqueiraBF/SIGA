@@ -26,6 +26,7 @@ interface DirectReceiptSidePanelProps {
     currentFarm: string;
     userName?: string;
     LOCAL_OPTIONS: { value: string; label: string }[];
+    isEditMode?: boolean;
 }
 
 export const DirectReceiptSidePanel: React.FC<DirectReceiptSidePanelProps> = ({
@@ -42,7 +43,8 @@ export const DirectReceiptSidePanel: React.FC<DirectReceiptSidePanelProps> = ({
     handleAddItem,
     currentFarm,
     userName,
-    LOCAL_OPTIONS
+    LOCAL_OPTIONS,
+    isEditMode = false
 }) => {
     return (
         <div className="w-[340px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
@@ -188,12 +190,14 @@ export const DirectReceiptSidePanel: React.FC<DirectReceiptSidePanelProps> = ({
                         />
                     </div>
 
-                    <button
-                        type="submit"
-                        className="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-sm hover:bg-slate-900 active:scale-95 transition-all shadow-lg shadow-slate-800/25 flex items-center justify-center gap-2 mt-4"
-                    >
-                        <Plus size={18} /> Adicionar Nota
-                    </button>
+                    {!isEditMode && (
+                        <button
+                            type="submit"
+                            className="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-sm hover:bg-slate-900 active:scale-95 transition-all shadow-lg shadow-slate-800/25 flex items-center justify-center gap-2 mt-4"
+                        >
+                            <Plus size={18} /> Adicionar Nota
+                        </button>
+                    )}
                 </form>
             </div>
         </div>

@@ -24,6 +24,7 @@ interface InvoiceItem {
     errorMsg?: string;
     file_url?: string; 
     file?: File | null;
+    isExisting?: boolean; // Flag para identificar se já está no banco
 }
 
 interface Props {
@@ -74,10 +75,36 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
                 amount: editingInvoice.amount?.toString() || '',
                 status: 'valid',
                 errorMsg: undefined,
-                file: null // Files are not edited here for now, or kept as URL
+                file: null
             });
+        } else {
+            // NEW LATCH: Load existing pending invoices for this farm
+            loadExistingPending();
         }
     }, [isOpen, editingInvoice]);
+
+    const loadExistingPending = async () => {
+        if (!user?.fazenda_id) return;
+        
+        try {
+            const existing = await invoiceService.getInvoices(user.fazenda_id, 'Pendente');
+            const mappedExisting: InvoiceItem[] = existing.map(inv => ({
+                id: inv.id,
+                invoice_number: inv.invoice_number,
+                supplier_name: inv.supplier_name,
+                supplier_cnpj: inv.supplier_cnpj,
+                issue_date: inv.issue_date,
+                delivery_date: inv.delivery_date,
+                amount: inv.amount?.toString() || '',
+                status: 'valid',
+                file_url: inv.file_url,
+                isExisting: true
+            }));
+            setItems(mappedExisting);
+        } catch (error) {
+            console.error('Erro ao carregar pendências existentes:', error);
+        }
+    };
 
     const resetForm = () => {
         setFormState({
@@ -129,7 +156,7 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
                 setFormState(prev => ({
                     ...prev,
                     status: 'duplicate',
-                    errorMsg: `Nota já lançada em ${new Date(duplicate.entry_date).toLocaleDateString()}`
+                    errorMsg: `Nota já lançada em ${duplicate.entry_date.split('T')[0].split('-').reverse().join('/')}`
                 }));
             } else {
                 setFormState(prev => ({ ...prev, status: 'valid', errorMsg: undefined }));
@@ -220,31 +247,37 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
 
         setIsSubmitting(true);
         try {
-            const payload = await Promise.all(items.map(async (item) => {
-                let fileUrl = item.file_url;
-                if (item.file) {
-                    const result = await uploadFileToSupabase(item.file);
-                    if (result.url) fileUrl = result.url;
-                }
+            const newItems = items.filter(item => !item.isExisting);
+            
+            let insertedInvoices: any[] = [];
+            
+            if (newItems.length > 0) {
+                const payload = await Promise.all(newItems.map(async (item) => {
+                    let fileUrl = item.file_url;
+                    if (item.file) {
+                        const result = await uploadFileToSupabase(item.file);
+                        if (result.url) fileUrl = result.url;
+                    }
 
-                return {
-                    invoice_number: item.invoice_number,
-                    supplier_name: item.supplier_name,
-                    supplier_cnpj: item.supplier_cnpj,
-                    issue_date: item.issue_date,
-                    delivery_date: item.delivery_date,
-                    amount: item.amount ? parseFloat(item.amount) : 0,
-                    farm_id: user.fazenda_id!,
-                    registered_by: user.id,
-                    status: 'Pendente' as const,
-                    file_url: fileUrl
-                };
-            }));
+                    return {
+                        invoice_number: item.invoice_number,
+                        supplier_name: item.supplier_name,
+                        supplier_cnpj: item.supplier_cnpj,
+                        issue_date: item.issue_date,
+                        delivery_date: item.delivery_date,
+                        amount: item.amount ? parseFloat(item.amount) : 0,
+                        farm_id: user.fazenda_id!,
+                        registered_by: user.id,
+                        status: 'Pendente' as const,
+                        file_url: fileUrl
+                    };
+                }));
 
-            await invoiceService.createPendingInvoices(payload);
+                insertedInvoices = await invoiceService.createPendingInvoices(payload);
+            }
 
-            // Rich Email Notification
-            if (user?.email) {
+            // Rich Email Notification - INCLUDES ALL (NEW + EXISTING)
+            if (user?.email && items.length > 0) {
                 try {
                     const { graphService } = await import('../../services/graphService');
                     const { systemService } = await import('../../services/systemService');
@@ -295,13 +328,13 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
                         }
                     }
 
-                    const rowsHtml = payload.map(inv => `
+                    const rowsHtml = items.map(inv => `
                         <tr>
                             <td style="padding: 12px; border: 1px solid #e2e8f0; font-family: monospace; font-weight: bold;">${inv.invoice_number}</td>
                             <td style="padding: 12px; border: 1px solid #e2e8f0; text-transform: uppercase;">${inv.supplier_name}</td>
-                            <td style="padding: 12px; border: 1px solid #e2e8f0;">${new Date(inv.issue_date).toLocaleDateString('pt-BR')}</td>
-                            <td style="padding: 12px; border: 1px solid #e2e8f0;">${new Date(inv.delivery_date).toLocaleDateString('pt-BR')}</td>
-                            <td style="padding: 12px; border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">R$ ${inv.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                            <td style="padding: 12px; border: 1px solid #e2e8f0;">${inv.issue_date.split('-').reverse().join('/')}</td>
+                            <td style="padding: 12px; border: 1px solid #e2e8f0;">${inv.delivery_date.split('-').reverse().join('/')}</td>
+                            <td style="padding: 12px; border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">R$ ${parseFloat(inv.amount || '0').toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                         </tr>
                     `).join('');
 
@@ -353,7 +386,7 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
                             </p>
                         </div>`;
 
-                    const subject = `[Relatório NFs] Recebidos mas sem lançamento - ${payload.length} ${payload.length === 1 ? 'NOTA' : 'NOTAS'}`;
+                    const subject = `[Relatório NFs] Recebidos mas sem lançamento - ${items.length} ${items.length === 1 ? 'NOTA' : 'NOTAS'}`;
                     await graphService.sendEmail(user.email, toRecipients, subject, body, ccRecipients, attachments);
                 } catch (emailErr) {
                     console.error('Email notify failed', emailErr);
@@ -498,11 +531,18 @@ export const InvoiceRegistrationModal = ({ isOpen, onClose, onSuccess, editingIn
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100">
                                                         {items.map((item) => (
-                                                            <tr key={item.id} className="hover:bg-blue-50/20 transition-all group">
-                                                                <td className="px-6 py-4 font-mono font-bold text-blue-600 text-sm italic">#{item.invoice_number}</td>
+                                                            <tr key={item.id} className={`hover:bg-blue-50/20 transition-all group ${item.isExisting ? 'bg-slate-50/50' : ''}`}>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-mono font-bold text-blue-600 text-sm italic">#{item.invoice_number}</span>
+                                                                        {item.isExisting && (
+                                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Já Registrada</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
                                                                 <td className="px-6 py-4 text-sm font-bold text-slate-700 uppercase">{item.supplier_name}</td>
-                                                                <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{new Date(item.issue_date).toLocaleDateString()}</td>
-                                                                <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{new Date(item.delivery_date).toLocaleDateString()}</td>
+                                                                <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{item.issue_date.split('-').reverse().join('/')}</td>
+                                                                <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{item.delivery_date.split('-').reverse().join('/')}</td>
                                                                 <td className="px-6 py-4 text-sm font-black text-slate-800 text-right">
                                                                     {item.amount ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(item.amount)) : 'R$ 0,00'}
                                                                 </td>

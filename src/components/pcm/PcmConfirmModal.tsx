@@ -3,6 +3,7 @@ import { X, Upload, File as FileIcon, Loader2, Info, CheckCircle2, Package, MapP
 import { useAuth } from '../../context/AuthContext';
 import { pcmService, PcmRequest } from '../../services/pcmService';
 import { formatInSystemTime } from '../../utils/dateUtils';
+import { differenceInMinutes } from 'date-fns';
 import toast from 'react-hot-toast';
 
 interface PcmConfirmModalProps {
@@ -118,11 +119,11 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
           </button>
         </div>
 
-        {/* Body com Split Layout */}
+        {/* Body com Split Layout (Restaurando o Padrão Visual) */}
         <div className="flex flex-1 overflow-hidden">
           
           {/* Sidebar Esquerda (Contexto da Requisição Original) */}
-          <div className="w-[340px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
+          <div className="w-[340px] shrink-0 border-r border-slate-200 bg-slate-50/30 flex flex-col overflow-y-auto">
             <div className="p-6 space-y-6">
               <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                 <ClipboardList size={12} /> Detalhes Originais
@@ -135,7 +136,7 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
                     type="text"
                     value={formatInSystemTime(new Date(request.created_at || ''))}
                     disabled
-                    className="w-full px-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-600 text-sm font-medium"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-medium shadow-sm"
                   />
                 </div>
 
@@ -143,9 +144,9 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Solicitante PCM</label>
                   <input
                     type="text"
-                    value={request.usuario?.nome || 'N/A'} // Added null check for request.usuario
+                    value={request.usuario?.nome || 'N/A'}
                     disabled
-                    className="w-full px-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-600 text-sm font-medium"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-medium shadow-sm"
                   />
                 </div>
 
@@ -155,33 +156,33 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
                     type="text"
                     value={request.maquina}
                     disabled
-                    className="w-full px-4 py-2.5 bg-slate-100 border border-transparent rounded-lg text-slate-600 text-sm font-medium"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-medium shadow-sm"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Requisição PCM</label>
-                  <div className="px-4 py-2.5 bg-blue-50/50 border border-blue-100 rounded-lg text-blue-700 text-sm font-mono font-bold">
-                    {request.num_requisicao}
+                  <div className="px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-lg text-blue-700 text-sm font-mono font-bold shadow-sm">
+                    #{request.num_requisicao}
                   </div>
                 </div>
 
                  <div className="pt-2">
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Observação PCM</label>
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-600 text-xs italic leading-relaxed">
-                      "{request.obs_pcm}"
+                    <div className="p-3 bg-white border border-slate-200 rounded-lg text-slate-600 text-xs italic leading-relaxed shadow-sm">
+                      "{request.obs_pcm || 'Sem observações.'}"
                     </div>
                  </div>
 
                  {request.anexo_pcm_url && (
-                   <div className="pt-4 border-t border-slate-100 mt-4">
+                   <div className="pt-4 border-t border-slate-200 mt-4">
                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Anexo Original do PCM</label>
                      <button 
                        type="button"
                        onClick={() => handlePreview(request.anexo_pcm_url!, true)}
-                       className="w-full flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-700 hover:bg-blue-100 transition-all group shadow-sm active:scale-95"
+                       className="w-full flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl text-blue-600 hover:border-blue-300 hover:shadow-md transition-all group active:scale-95 shadow-sm"
                      >
-                       <div className="p-2 bg-white rounded-lg group-hover:scale-110 transition-transform shadow-inner">
+                       <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:scale-110 transition-transform">
                          <FileIcon size={18} />
                        </div>
                        <span className="text-xs font-bold truncate">Visualizar Documento</span>
@@ -192,57 +193,75 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
             </div>
           </div>
 
-          {/* Área Principal Direita (Almoxarifado) */}
-          <div className="flex-1 overflow-y-auto p-8 bg-white/50">
-            <div className="space-y-8">
+          {/* Área Principal Direita (Ação do Almoxarifado) */}
+          <div className="flex-1 overflow-y-auto p-8 bg-white">
+            <div className="max-w-2xl space-y-8">
               
+              {/* Alerta de Tempo (Lead Time Dinâmico) */}
+              {(() => {
+                const start = new Date(request.created_at || new Date());
+                const diffMins = differenceInMinutes(new Date(), start);
+                const hours = Math.floor(diffMins / 60);
+                const mins = diffMins % 60;
+                const timeText = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                
+                const isDelayed = hours >= 4; 
+                
+                return (
+                  <div className={`flex items-center gap-3 p-4 rounded-xl border shadow-sm ${isDelayed ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                    <Clock size={20} className={isDelayed ? 'text-amber-500 animate-pulse' : 'text-slate-400'} />
+                    <div className="text-sm font-medium">
+                      Esta requisição aguarda a geração da SC há <strong className="font-bold">{timeText}</strong>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-4">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <span className="text-emerald-500 text-lg">+</span> INFORMAÇÕES DA COMPRA
+                <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+                  <span className="text-emerald-500 text-lg">+</span> INFORMAÇÕES DA SC (UNISISTEM)
                 </div>
 
-                <div className="grid grid-cols-1 gap-4"> {/* Changed to grid-cols-1 as there's only one input */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">NÚMERO DA SC (ERP) *</label>
-                    <input
-                      type="text"
-                      required // Added required attribute
-                      value={numSc}
-                      onChange={(e) => setNumSc(e.target.value)}
-                      placeholder="Ex: 88721"
-                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-2 uppercase">NÚMERO DA SC GERADA *</label>
+                  <input
+                    type="text"
+                    required
+                    value={numSc}
+                    onChange={(e) => setNumSc(e.target.value.toUpperCase())}
+                    placeholder="Ex: 88721"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-xl text-2xl text-center text-slate-800 focus:bg-white focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none font-mono transition-all"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">OBSERVAÇÕES ALMOXARIFADO</label>
                   <textarea
                     value={obsAlmox}
-                    onChange={(e) => setObsAlmox(e.target.value)}
-                    placeholder="Informações adicionais para o setor de compras..."
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-emerald-500 min-h-[100px] resize-none"
+                    onChange={(e) => setObsAlmox(e.target.value.toUpperCase())}
+                    placeholder="Alguma divergência ou informação para compras?"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm focus:bg-white focus:ring-2 focus:ring-emerald-500 min-h-[100px] resize-none transition-all"
                   />
                 </div>
               </div>
 
-              <div className="space-y-4 pt-6 border-t border-slate-100">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <span className="text-emerald-500 text-lg">+</span> COMPROVANTE / ANEXO
+              <div className="pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-3">
+                  <span className="text-emerald-500 text-lg">+</span> COMPROVANTE / ANEXO (OPCIONAL)
                 </div>
 
                 <div 
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`flex justify-center px-6 pt-10 pb-10 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
+                  className={`flex justify-center px-6 pt-8 pb-8 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
                   isDragging 
                     ? 'border-emerald-500 bg-emerald-50/50 scale-[1.02]' 
                     : file 
                       ? 'border-emerald-200 bg-emerald-50/20' 
                       : 'border-slate-200 bg-slate-50 hover:border-emerald-300 shadow-inner'
                 }`}>
-                  <div className="space-y-2 text-center text-emerald-800/60 font-bold uppercase tracking-widest shadow-inner">
+                  <div className="space-y-2 text-center text-emerald-800/60 font-bold uppercase tracking-widest">
                     {file ? (
                       <div className="flex flex-col items-center">
                         <div 
@@ -269,13 +288,12 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
                       </div>
                     ) : (
                       <>
-                        <Upload className="mx-auto h-12 w-12 text-slate-300" />
-                        <div className="flex flex-col gap-1 items-center">
+                        <Upload className="mx-auto h-10 w-10 text-emerald-300" />
+                        <div className="flex flex-col gap-1 items-center mt-2">
                           <label htmlFor="almox-file-upload" className="relative cursor-pointer font-extrabold text-emerald-600 hover:text-emerald-700">
-                            <span className="text-base block text-center">Clique, cole ou arraste um arquivo</span>
+                            <span className="text-sm block text-center">Clique, cole ou arraste um arquivo</span>
                             <input id="almox-file-upload" name="almox-file-upload" type="file" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                           </label>
-                          <p className="text-xs text-emerald-600/40">ANEXE A PROVA DA SC DO ERP</p>
                         </div>
                       </>
                     )}
@@ -308,7 +326,7 @@ export function PcmConfirmModal({ isOpen, onClose, onSuccess, request }: PcmConf
               ) : (
                 <CheckCircle2 size={16} />
               )}
-              {loading ? 'Processando...' : 'Confirmar e Enviar SC'}
+              {loading ? 'Processando...' : 'Confirmar e Enviar'}
             </button>
           </div>
         </div>

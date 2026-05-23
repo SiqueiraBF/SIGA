@@ -1,5 +1,6 @@
 
 import { db } from '../supabaseService';
+import { supabase } from '../../lib/supabase';
 import { DEFAULTS, NuntecConfig } from './types';
 
 /**
@@ -21,8 +22,8 @@ export async function getConfig(): Promise<NuntecConfig | null> {
                 START_DATE_SYNC: config.sync_start_date
                     ? `${config.sync_start_date}T00:00:00`
                     : DEFAULTS.START_DATE_SYNC,
-                AUTH_USER: config.username || DEFAULTS.AUTH_USER,
-                AUTH_PASS: config.password || DEFAULTS.AUTH_PASS,
+                AUTH_USER: 'PROTEGIDO',
+                AUTH_PASS: 'PROTEGIDO',
             };
         }
     } catch (e) {
@@ -43,11 +44,17 @@ export function getAuthHeaders(config: NuntecConfig): Headers {
 /**
  * Generic fetch wrapper for Nuntec API
  */
+
 export async function fetchNuntec(endpoint: string, config: NuntecConfig, headers: Headers): Promise<Response> {
-    const url = `${config.BASE_URL}/${endpoint}`;
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-        throw new Error(`Nuntec API Request Failed: ${response.status} ${response.statusText} at ${endpoint}`);
+    if (!endpoint.startsWith('/')) endpoint = '/' + endpoint;
+    const { data, error } = await supabase.functions.invoke('nuntec-proxy', {
+        body: { endpoint: endpoint, method: 'GET' }
+    });
+    
+    if (error) {
+        throw new Error(`Nuntec Proxy Request Failed: ${error.message}`);
     }
-    return response;
+    
+    return new Response(data, { status: 200 });
 }
+

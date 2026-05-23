@@ -5,6 +5,21 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/), 
 e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-05-19
+
+### Corrigido
+- **Módulo de Auditoria de Recebimento (`api/audit.ts` e `api/audit-dev-server.mjs`)**:
+  - Correção na regra de correspondência ("matching") entre abastecimentos (supplies) e pesagens/análises (measurements) vindas da API da Nuntec.
+  - Implementada a função de compatibilidade de combustíveis (`isCompatibleFuel`) para permitir que o ID de combustível `'1'` (abastecimentos) e `'2'` (medições de peso) sejam pareados com sucesso (ambos são variações de Óleo Diesel no contexto da Nadiana).
+  - Adicionado o mapeamento do código `'1'` para `'Óleo Diesel'` no `fuelsMap`.
+  - Com isso, as notas fiscais correspondentes recentes (de abril/maio de 2026) agora são exibidas com status correto de `ANALYZED` na listagem de auditoria.
+- **Componente de Linha de Auditoria (`src/components/audit/AuditRow.tsx`)**:
+  - Correção na exibição dos dados de conformidade técnica para registros marcados como `NÃO CONFORME` (non_conforming).
+  - Anteriormente, o campo de temperatura era exibido apenas para registros `CONFORME`, sendo omitido nos demais. A temperatura agora é renderizada corretamente para todos os registros que contêm análise associada.
+- **Cards de Métricas de Auditoria (`src/components/audit/AuditStatsCards.tsx`)**:
+  - Implementada a exibição da diferença percentual acumulada de quebra diretamente no card de **Volume Acumulado de Quebra**, facilitando a identificação imediata de perdas acima da tolerância recomendada de `0.60%`.
+  - Atualizado o subtexto do card para indicar explicitamente que a quebra é calculada com base no período e filtros atualmente selecionados (*"Diferença total no período selecionado"*).
+
 ## [Unreleased] - 2026-03-04
 
 ### Adicionado

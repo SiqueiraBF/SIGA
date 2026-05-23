@@ -51,7 +51,6 @@ export interface Database {
           id: string;
           nome: string;
           login: string;
-          senha: string;
           funcao_id: string | null;
           fazenda_id: string | null;
           ativo: boolean;
@@ -71,7 +70,6 @@ export interface Database {
           id?: string;
           nome?: string;
           login?: string;
-          senha?: string;
           funcao_id?: string | null;
           fazenda_id?: string | null;
           ativo?: boolean;

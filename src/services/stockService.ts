@@ -1,10 +1,10 @@
 import { supabase } from '../lib/supabase';
-import type { Material, StockRequest, StockRequestItem } from '../types';
+import type { Material, StockRequest, StockRequestItem, StockRequestCategory } from '../types';
 
 export const stockService = {
     // --- Materials (Catálogo) ---
 
-    async getMaterials(search?: string): Promise<Material[]> {
+    async getMaterials(search?: string, category?: StockRequestCategory): Promise<Material[]> {
         let query = supabase
             .from('materials')
             .select('*')
@@ -15,8 +15,19 @@ export const stockService = {
             query = query.or(`name.ilike.%${search}%,unisystem_code.ilike.%${search}%`);
         }
 
+        if (category === 'SEGURANCA') {
+            query = query.eq('sub_group', 'SEGURANCA');
+        } else if (category === 'UNIFORME') {
+            query = query.eq('sub_group', 'UNIFORME');
+        } else if (category === 'GERAL') {
+            query = query.not('sub_group', 'in', '("SEGURANCA","UNIFORME")');
+        }
+
         const { data, error } = await query;
-        if (error) throw error;
+        if (error) {
+            console.error('getMaterials Error:', error);
+            throw error;
+        }
         return data || [];
     },
 
@@ -94,7 +105,8 @@ export const stockService = {
     async createRequest(
         farmId: string,
         requesterId: string,
-        notes?: string
+        notes?: string,
+        category?: StockRequestCategory
     ): Promise<StockRequest> {
         const { data, error } = await supabase
             .from('stock_requests')
@@ -102,6 +114,7 @@ export const stockService = {
                 farm_id: farmId,
                 requester_id: requesterId,
                 status: 'DRAFT',
+                category: category || 'GERAL',
                 notes
             })
             .select()
@@ -217,6 +230,14 @@ export const stockService = {
         const { error } = await supabase
             .from('stock_request_items')
             .delete()
+            .eq('id', itemId);
+        if (error) throw error;
+    },
+
+    async updateItemQuantity(itemId: string, quantity: number): Promise<void> {
+        const { error } = await supabase
+            .from('stock_request_items')
+            .update({ quantity_requested: quantity })
             .eq('id', itemId);
         if (error) throw error;
     },

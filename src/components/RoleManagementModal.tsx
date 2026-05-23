@@ -43,6 +43,7 @@ const CONFIGURABLE_MODULES: {
   supportsDelete?: boolean;
   deleteLabel?: string;
   deleteDescription?: string;
+  supportsDeleteScope?: boolean;
 }[] = [
     {
       key: 'solicitacoes_pcm',
@@ -163,6 +164,25 @@ const CONFIGURABLE_MODULES: {
       description: 'Registro de notas fiscais entregues diretamente (Sem Almoxarifado)',
       supportsConfirm: false,
       supportsNotifications: true,
+      supportsEditToggle: true,
+      supportsDelete: true,
+      supportsDeleteScope: true,
+    },
+    {
+      key: 'pagamentos_fora_prazo',
+      label: 'Pagamentos Fora do Prazo',
+      description: 'Gestão de lançamentos e aprovações de pagamentos',
+      supportsConfirm: false,
+      supportsNotifications: true,
+      supportsEditToggle: true,
+      supportsDelete: true,
+    },
+    {
+      key: 'controle_saving',
+      label: 'Controle de Saving',
+      description: 'Gestão de negociações e descontos do setor de suprimentos',
+      supportsConfirm: false,
+      simpleEdit: true,
     },
   ];
 
@@ -248,11 +268,17 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
             ? r.modulos_permitidos.includes('analisar_cadastros')
             : false;
 
-        const currentPerm = safePerms[moduleKey] || {
-          view_scope: r.modulos_permitidos.includes(moduleKey) ? 'ALL' : 'NONE',
-          edit_scope: 'NONE',
-          can_confirm: defaultCanConfirm,
-        };
+        // Recupera permissão atual ou cria uma nova com estrutura padrão
+        const currentPermRaw = safePerms[moduleKey];
+        
+        // Sanitização: Se o objeto existe mas não tem a estrutura padrão, ignoramos e usamos o padrão
+        const currentPerm: ModulePermission = (currentPermRaw && typeof currentPermRaw === 'object' && 'view_scope' in currentPermRaw)
+          ? currentPermRaw as ModulePermission
+          : {
+            view_scope: r.modulos_permitidos.includes(moduleKey) ? 'ALL' : 'NONE',
+            edit_scope: 'NONE',
+            can_confirm: defaultCanConfirm,
+          };
 
         const updatedPerm = { ...currentPerm, [field]: value };
 
@@ -432,13 +458,16 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                   <div className="grid grid-cols-1 gap-4">
                     {CONFIGURABLE_MODULES.map((mod) => {
-                      const perms: ModulePermission = selectedRole.permissoes?.[mod.key] || {
-                        view_scope: selectedRole.modulos_permitidos.includes(mod.key)
-                          ? 'ALL'
-                          : 'NONE',
-                        edit_scope: 'NONE',
-                        can_confirm: false,
-                      };
+                      const rawPerm = selectedRole.permissoes?.[mod.key];
+                      const perms: ModulePermission = (rawPerm && typeof rawPerm === 'object' && 'view_scope' in rawPerm)
+                        ? rawPerm as ModulePermission
+                        : {
+                          view_scope: selectedRole.modulos_permitidos.includes(mod.key)
+                            ? 'ALL'
+                            : 'NONE',
+                          edit_scope: 'NONE',
+                          can_confirm: false,
+                        };
                       const isLinked = perms.view_scope !== 'NONE';
 
                       return (
@@ -510,7 +539,9 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       <option value="ALL">👀 Todos</option>
                                       {mod.key !== 'gestao_estoque' && (
                                         <>
-                                          <option value="SAME_FARM">🏠 Mesma Fazenda</option>
+                                          {mod.key !== 'pagamentos_fora_prazo' && (
+                                            <option value="SAME_FARM">🏠 Mesma Fazenda</option>
+                                          )}
                                           {mod.key !== 'gestao_postos' && mod.key !== 'gestao_recebimento_direto' && (
                                             <option value="OWN_ONLY">👤 Apenas Próprios</option>
                                           )}
@@ -520,7 +551,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                   </div>
                                 )}
 
-                                {mod.key === 'solicitacoes_pcm' ? (
+                                {mod.key === 'solicitacoes_pcm' || mod.key === 'pagamentos_fora_prazo' ? (
                                   <div className="flex items-end pb-1 text-slate-300 text-[10px] italic">
                                     Use as opções ao lado
                                   </div>
@@ -565,6 +596,30 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                           <option value="ALL">🛠️ Gerenciamento Total</option>
                                         </>
                                       )}
+                                    </select>
+                                  </div>
+                                )}
+
+                                {mod.supportsDeleteScope && (
+                                  <div>
+                                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
+                                      Exclusão
+                                    </label>
+                                    <select
+                                      value={perms.delete_scope || 'NONE'}
+                                      onChange={(e) =>
+                                        handlePermissionChange(
+                                          selectedRole.id,
+                                          mod.key,
+                                          'delete_scope',
+                                          e.target.value,
+                                        )
+                                      }
+                                      className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
+                                    >
+                                      <option value="NONE">🔒 Proibido Excluir</option>
+                                      <option value="OWN_ONLY">👤 Apenas Próprios</option>
+                                      <option value="ALL">🗑️ Exclusão Total</option>
                                     </select>
                                   </div>
                                 )}
@@ -659,7 +714,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       />
                                       <div className="flex flex-col">
                                         <span className="text-sm font-semibold text-slate-700">
-                                          {mod.key === 'gestao_limpeza' ? 'Configurar E-mails e Fazendas' : (mod.key === 'solicitacoes_pcm' ? 'Configurar E-mail' : (mod.key === 'gestao_drenagem' ? 'Notificações de Drenagem' : (mod.key === 'gestao_recebimento' ? 'Notificações de Recebimento' : (mod.key === 'gestao_nfs' ? 'Notificações de NFs' : (mod.key === 'gestao_recebimento_direto' ? 'Configurar E-mails' : 'Notificações de Estoque')))))}
+                                          {mod.key === 'gestao_limpeza' ? 'Configurar E-mails e Fazendas' : (mod.key === 'solicitacoes_pcm' ? 'Configurar E-mail' : (mod.key === 'gestao_drenagem' ? 'Notificações de Drenagem' : (mod.key === 'gestao_recebimento' ? 'Notificações de Recebimento' : (mod.key === 'gestao_nfs' ? 'Notificações de NFs' : (mod.key === 'gestao_recebimento_direto' ? 'Configurar E-mails' : (mod.key === 'pagamentos_fora_prazo' ? 'Configurações' : 'Notificações de Estoque'))))))}
                                         </span>
                                         <span className="text-[10px] text-slate-400 leading-tight">
                                           Recebe/Configura E-mails

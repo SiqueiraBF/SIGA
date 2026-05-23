@@ -6,13 +6,15 @@ interface DirectReceiptFooterProps {
     onClose: () => void;
     handleFinalSave: () => void;
     pendingCount: number;
+    isEditMode?: boolean;
 }
 
 export const DirectReceiptFooter: React.FC<DirectReceiptFooterProps> = ({
     loading,
     onClose,
     handleFinalSave,
-    pendingCount
+    pendingCount,
+    isEditMode = false
 }) => {
     return (
         <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between z-10 transition-all">
@@ -45,7 +47,7 @@ export const DirectReceiptFooter: React.FC<DirectReceiptFooterProps> = ({
                     ) : (
                         <>
                             <CheckCircle2 size={16} /> 
-                            <span>Salvar Lote e Notificar</span>
+                            <span>{isEditMode ? 'Salvar Alterações' : 'Salvar Lote e Notificar'}</span>
                         </>
                     )}
                 </button>

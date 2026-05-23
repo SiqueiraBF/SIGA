@@ -166,7 +166,7 @@ export function GoodsReceiptDispatchModal({ isOpen, onClose, onSuccess }: GoodsR
                     {/* Farm Selection */}
                     <div className="space-y-4 mb-6">
                         <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                            <MapPin size={16} className="text-slate-400" /> Selecione a Fazenda de Destino
+                            <MapPin size={16} className="text-slate-400" /> Selecione a Rota (Fazenda)
                         </label>
                         <select
                             className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -187,7 +187,7 @@ export function GoodsReceiptDispatchModal({ isOpen, onClose, onSuccess }: GoodsR
                             {/* Item Selection */}
                             <div className="space-y-2">
                                 <h4 className="font-bold text-slate-700 flex items-center justify-between">
-                                    <span>Notas Pendentes para a Fazenda</span>
+                                    <span>Notas Pendentes na Rota</span>
                                     <span className="text-xs font-normal bg-blue-100 text-blue-700 px-2 py-1 rounded-full">{farmPendingItems.length} itens</span>
                                 </h4>
 
@@ -195,7 +195,7 @@ export function GoodsReceiptDispatchModal({ isOpen, onClose, onSuccess }: GoodsR
                                     <div className="text-center py-8 text-slate-400">Carregando itens...</div>
                                 ) : farmPendingItems.length === 0 ? (
                                     <div className="p-4 bg-slate-50 rounded-xl text-center text-slate-500 text-sm">
-                                        Nenhuma mercadoria pendente para esta fazenda.
+                                        Nenhuma mercadoria pendente para esta rota.
                                     </div>
                                 ) : (
                                     <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
@@ -213,8 +213,15 @@ export function GoodsReceiptDispatchModal({ isOpen, onClose, onSuccess }: GoodsR
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3">
-                                                            <div className="font-medium text-slate-700">{item.invoice_number}</div>
-                                                            <div className="text-xs text-slate-400">{item.supplier}</div>
+                                                            <div className="font-medium text-slate-700 flex items-center gap-2">
+                                                                {item.invoice_number}
+                                                                {item.operation_type === 'CONSERTO' && (
+                                                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700">CONSERTO</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-xs text-slate-400">
+                                                                {item.operation_type === 'CONSERTO' ? `Para: ${item.supplier}` : `De: ${item.supplier}`}
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-3 text-right text-xs text-slate-500">
                                                             {format(parseISO(item.entry_at), "dd/MM HH:mm", { locale: ptBR })}

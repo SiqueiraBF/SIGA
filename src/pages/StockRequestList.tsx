@@ -368,6 +368,15 @@ export function StockRequestList() {
                                             variant={StatusInfo.variant}
                                             size="sm"
                                         />
+                                        {req.category && req.category !== 'GERAL' && (
+                                            <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wide font-bold ${
+                                                req.category === 'SEGURANCA' 
+                                                    ? 'bg-orange-50 text-orange-700 border-orange-200' 
+                                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                            }`}>
+                                                {req.category === 'SEGURANCA' ? '🦺 EPI' : '👕 Uniforme'}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
                                         <span className="flex items-center gap-1.5">

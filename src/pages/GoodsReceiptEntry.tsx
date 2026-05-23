@@ -11,6 +11,7 @@ import StatsCard from '../components/ui/StatsCard';
 import { GoodsReceiptFormModal } from '../components/goods-receipt/GoodsReceiptFormModal';
 import { useAuth } from '../context/AuthContext';
 import { GoodsReceiptEmailSettingsModal } from '../components/goods-receipt/GoodsReceiptEmailSettingsModal';
+import { GoodsReceiptEntryDetailsModal } from '../components/goods-receipt/GoodsReceiptEntryDetailsModal';
 import { ArrowUpDown, ArrowUp, ArrowDown, Building2, User } from 'lucide-react';
 
 type SortField = 'status' | 'data' | 'fornecedor' | 'destino' | 'recebedor';
@@ -31,6 +32,10 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [selectedReceipt, setSelectedReceipt] = useState<GoodsReceipt | null>(null);
 
+    // View Details Modal
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+    const [viewSelectedReceipt, setViewSelectedReceipt] = useState<GoodsReceipt | null>(null);
+
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
@@ -38,10 +43,47 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
     const [filterReceiver, setFilterReceiver] = useState('');
     const [filterStartDate, setFilterStartDate] = useState('');
     const [filterEndDate, setFilterEndDate] = useState('');
+    const [filterOperationType, setFilterOperationType] = useState('');
 
-    // Sorting
     const [sortField, setSortField] = useState<SortField>('data');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const [isFilteringExitDate, setIsFilteringExitDate] = useState(false);
+    const isTodayFilterActive = filterStartDate === todayStr && filterEndDate === todayStr;
+
+    const toggleTodayFilter = () => {
+        if (isTodayFilterActive && !filterStatus && !isFilteringExitDate) {
+            clearFilters();
+        } else {
+            setFilterStartDate(todayStr);
+            setFilterEndDate(todayStr);
+            setFilterStatus('');
+            setIsFilteringExitDate(false);
+        }
+    };
+
+    const toggleDispatchedTodayFilter = () => {
+        if (isTodayFilterActive && filterStatus === 'Despachado' && isFilteringExitDate) {
+            clearFilters();
+        } else {
+            setFilterStartDate(todayStr);
+            setFilterEndDate(todayStr);
+            setFilterStatus('Despachado');
+            setIsFilteringExitDate(true);
+        }
+    };
+
+    const togglePendingFilter = () => {
+        if (filterStatus === 'Aguardando' && !filterStartDate && !filterEndDate) {
+            clearFilters();
+        } else {
+            setFilterStatus('Aguardando');
+            setFilterStartDate('');
+            setFilterEndDate('');
+            setIsFilteringExitDate(false);
+        }
+    };
 
     useEffect(() => {
         loadData();
@@ -66,6 +108,11 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
             setSelectedReceipt(receipt);
             setIsModalOpen(true);
         }
+    };
+
+    const handleViewDetails = (receipt: GoodsReceipt) => {
+        setViewSelectedReceipt(receipt);
+        setIsViewModalOpen(true);
     };
 
     const handleDelete = async (id: string) => {
@@ -93,21 +140,9 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
         if (viewScope === 'OWN_ONLY' && user && item.receiver_id !== user.id) return false;
         if (viewScope === 'SAME_FARM' && user && item.destination_farm_id !== user.fazenda_id) return false;
 
-        // Date Filter
-        if (filterStartDate || filterEndDate) {
-            const entryDate = parseISO(item.entry_at);
-            if (filterStartDate) {
-                const start = new Date(filterStartDate + 'T00:00:00');
-                if (entryDate < start) return false;
-            }
-            if (filterEndDate) {
-                const end = new Date(filterEndDate + 'T23:59:59');
-                if (entryDate > end) return false;
-            }
-        }
-
         if (filterDestination && item.destination_farm?.nome !== filterDestination) return false;
         if (filterReceiver && item.receiver?.nome !== filterReceiver) return false;
+        if (filterOperationType && item.operation_type !== filterOperationType) return false;
 
         if (!searchTerm) return true;
         const lowerSearch = searchTerm.toLowerCase();
@@ -120,13 +155,34 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
         );
     });
 
-    // 2. Final filter (Applies Status explicitly for the List rendering)
+    // 2. Final filter (Applies Status and Date explicitly for the List rendering)
     const filteredReceipts = baseReceipts.filter(item => {
+        // Status Filter
         if (filterStatus) {
             const isExited = !!item.exit_at || !!item.exit;
             if (filterStatus === 'Aguardando' && isExited) return false;
             if (filterStatus === 'Despachado' && !isExited) return false;
         }
+
+        // Date Filter
+        if (filterStartDate || filterEndDate) {
+            const exitDateStr = item.exit?.exit_date || item.exit_at;
+            const dateToCompare = isFilteringExitDate 
+                ? (exitDateStr ? parseISO(exitDateStr) : null)
+                : parseISO(item.entry_at);
+            
+            if (!dateToCompare) return false;
+
+            if (filterStartDate) {
+                const start = new Date(filterStartDate + 'T00:00:00');
+                if (dateToCompare < start) return false;
+            }
+            if (filterEndDate) {
+                const end = new Date(filterEndDate + 'T23:59:59');
+                if (dateToCompare > end) return false;
+            }
+        }
+
         return true;
     });
 
@@ -190,9 +246,11 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
         setFilterReceiver('');
         setFilterStartDate('');
         setFilterEndDate('');
+        setFilterOperationType('');
+        setIsFilteringExitDate(false);
     };
 
-    const hasActiveFilters = filterStatus || filterDestination || filterReceiver || searchTerm || filterStartDate || filterEndDate;
+    const hasActiveFilters = filterStatus || filterDestination || filterReceiver || searchTerm || filterStartDate || filterEndDate || filterOperationType;
 
     const uniqueDestinations = Array.from(new Set(receipts.map(r => r.destination_farm?.nome).filter(Boolean)));
     const uniqueReceivers = Array.from(new Set(receipts.map(r => r.receiver?.nome).filter(Boolean)));
@@ -257,27 +315,27 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                     value={stats.pending}
                     icon={Clock}
                     description="recebimentos retidos"
-                    variant={filterStatus === 'Aguardando' ? 'orange' : 'default'}
-                    onClick={() => setFilterStatus(filterStatus === 'Aguardando' ? '' : 'Aguardando')}
-                    className={`hover:bg-orange-50 ${filterStatus === 'Aguardando' ? 'ring-2 ring-orange-200 bg-orange-50' : ''}`}
+                    variant={(filterStatus === 'Aguardando' && !filterStartDate) ? 'orange' : 'default'}
+                    onClick={togglePendingFilter}
+                    className={`hover:bg-orange-50 ${(filterStatus === 'Aguardando' && !filterStartDate) ? 'ring-2 ring-orange-200 bg-orange-50' : 'bg-white'}`}
                 />
                 <StatsCard
                     title="RECEBIDOS HOJE"
                     value={stats.receivedToday}
                     icon={Package}
                     description="entradas hoje"
-                    variant={!filterStatus ? 'blue' : 'default'}
-                    onClick={() => setFilterStatus('')}
-                    className={!filterStatus ? 'ring-2 ring-blue-200' : ''}
+                    variant={(isTodayFilterActive && !filterStatus && !isFilteringExitDate) ? 'blue' : 'default'}
+                    onClick={toggleTodayFilter}
+                    className={`hover:bg-blue-50 ${(isTodayFilterActive && !filterStatus && !isFilteringExitDate) ? 'ring-2 ring-blue-200 bg-blue-50' : 'bg-white'}`}
                 />
                 <StatsCard
                     title="DESPACHADOS HOJE"
                     value={stats.dispatchedToday}
                     icon={Truck}
                     description="saídas de carregamentos"
-                    variant={filterStatus === 'Despachado' ? 'green' : 'default'}
-                    onClick={() => setFilterStatus(filterStatus === 'Despachado' ? '' : 'Despachado')}
-                    className={`hover:bg-green-50 ${filterStatus === 'Despachado' ? 'ring-2 ring-green-200 bg-green-50' : ''}`}
+                    variant={(isTodayFilterActive && filterStatus === 'Despachado' && isFilteringExitDate) ? 'green' : 'default'}
+                    onClick={toggleDispatchedTodayFilter}
+                    className={`hover:bg-green-50 ${(isTodayFilterActive && filterStatus === 'Despachado' && isFilteringExitDate) ? 'ring-2 ring-green-200 bg-green-50' : 'bg-white'}`}
                 />
             </div>
 
@@ -289,6 +347,15 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                     initialData={selectedReceipt}
                 />
             )}
+
+            <GoodsReceiptEntryDetailsModal
+                isOpen={isViewModalOpen}
+                onClose={() => {
+                    setIsViewModalOpen(false);
+                    setViewSelectedReceipt(null);
+                }}
+                receipt={viewSelectedReceipt}
+            />
 
             <div className="space-y-4">
                 <FilterBar
@@ -365,6 +432,20 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                     <option value="Despachado">Despachado</option>
                                 </select>
                             </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                                    <Package size={12} /> Natureza
+                                </label>
+                                <select
+                                    className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                                    value={filterOperationType}
+                                    onChange={(e) => setFilterOperationType(e.target.value)}
+                                >
+                                    <option value="">Todas</option>
+                                    <option value="COMPRA">Compra</option>
+                                    <option value="CONSERTO">Conserto / Devolução</option>
+                                </select>
+                            </div>
                         </>
                     }
                 />
@@ -409,7 +490,7 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                         {sortedReceipts.map(item => {
                                             const isExited = !!item.exit_at || !!item.exit;
                                             return (
-                                                <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                                                <tr key={item.id} className="hover:bg-slate-50 transition-colors group cursor-pointer" onClick={() => handleViewDetails(item)}>
                                                     <td className="px-6 py-4">
                                                         {isExited ? (
                                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium text-xs">
@@ -428,8 +509,13 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className="font-bold text-slate-700">{item.supplier}</div>
-                                                        <div className="text-xs text-slate-500 flex items-center gap-3">
+                                                        <div className="font-bold text-slate-700 flex items-center gap-2">
+                                                            {item.supplier.toUpperCase()}
+                                                            {item.operation_type === 'CONSERTO' && (
+                                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700">CONSERTO</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 flex items-center gap-3 mt-1">
                                                             <span className="flex items-center gap-1">
                                                                 <FileText size={10} /> NF: {item.invoice_number}
                                                             </span>
@@ -441,8 +527,13 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium text-xs">
-                                                            <MapPin size={12} /> {item.destination_farm?.nome}
+                                                        <div className="inline-flex flex-col gap-1">
+                                                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium text-xs">
+                                                                <MapPin size={12} /> {item.destination_farm?.nome}
+                                                            </div>
+                                                            {item.operation_type === 'CONSERTO' && (
+                                                                <span className="text-[10px] text-slate-400 font-medium ml-1"> Origem (Saindo) </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-slate-600">
@@ -485,7 +576,7 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             {(canEditAll || (canEditOwn && item.receiver_id === user?.id)) && (
                                                                 <button
-                                                                    onClick={() => handleEdit(item)}
+                                                                    onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
                                                                     className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                                     title="Editar"
                                                                 >
@@ -494,7 +585,7 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                             )}
                                                             {(isAdmin || (canEditOwn && item.receiver_id === user?.id)) && !item.exit_at && (
                                                                 <button
-                                                                    onClick={() => handleDelete(item.id)}
+                                                                    onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
                                                                     className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                                     title="Excluir"
                                                                 >
@@ -515,11 +606,16 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                 {sortedReceipts.map(item => {
                                     const isExited = !!item.exit_at || !!item.exit;
                                     return (
-                                        <div key={item.id} className="p-4 bg-white hover:bg-slate-50 transition-colors">
+                                        <div key={item.id} className="p-4 bg-white hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => handleViewDetails(item)}>
                                             {/* Header: Supplier & Status */}
                                             <div className="flex justify-between items-start mb-3">
                                                 <div>
-                                                    <div className="font-bold text-slate-800 line-clamp-1">{item.supplier}</div>
+                                                    <div className="font-bold text-slate-800 line-clamp-1 flex items-center gap-2">
+                                                        {item.supplier.toUpperCase()}
+                                                        {item.operation_type === 'CONSERTO' && (
+                                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700">CONSERTO</span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
                                                         <span>NF: {item.invoice_number}</span>
                                                         {item.order_number && (
@@ -544,9 +640,14 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                     <Calendar size={12} className="text-slate-400" />
                                                     {format(parseISO(item.entry_at), "dd/MM HH:mm", { locale: ptBR })}
                                                 </div>
-                                                <div className="flex items-center gap-1.5 text-slate-600">
-                                                    <MapPin size={12} className="text-slate-400" />
-                                                    {item.destination_farm?.nome}
+                                                <div className="flex flex-col gap-0.5">
+                                                    <div className="flex items-center gap-1.5 text-slate-600">
+                                                        <MapPin size={12} className="text-slate-400" />
+                                                        {item.destination_farm?.nome}
+                                                    </div>
+                                                    {item.operation_type === 'CONSERTO' && (
+                                                        <span className="text-[10px] text-slate-400 font-medium ml-4">Origem (Saindo)</span>
+                                                    )}
                                                 </div>
                                                 {item.exit && (
                                                     <div className="flex items-center gap-1.5 text-slate-600">
@@ -563,13 +664,13 @@ export function GoodsReceiptEntry({ embedded = false, refreshTrigger = 0, onEdit
                                                 </div>
                                                 <div className="flex gap-3">
                                                     <button
-                                                        onClick={() => handleEdit(item)}
+                                                        onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
                                                         className="text-blue-600 font-medium text-xs flex items-center gap-1 p-1"
                                                     >
                                                         <Edit size={14} /> Editar
                                                     </button>
                                                     <button
-                                                        onClick={() => handleDelete(item.id)}
+                                                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
                                                         className="text-red-500 font-medium text-xs flex items-center gap-1 p-1"
                                                     >
                                                         <Trash2 size={14} /> Excluir

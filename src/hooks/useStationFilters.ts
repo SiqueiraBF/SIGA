@@ -1,16 +1,22 @@
 import { useState, useMemo } from 'react';
 import { differenceInHours, parseISO } from 'date-fns';
-import type { Posto, NuntecMeasurement } from '../types';
+import type { Posto, NuntecMeasurement, NuntecAdmeasurement, NuntecReservoir } from '../types';
 import { useAuth } from '../context/AuthContext';
 
-export function useStationFilters(postos: (Posto & { fazenda: { nome: string } })[], measurements: NuntecMeasurement[]) {
+export function useStationFilters(
+    postos: (Posto & { fazenda: { nome: string } })[], 
+    measurements: NuntecMeasurement[],
+    admeasurements: NuntecAdmeasurement[],
+    drainageData: Record<string, string>,
+    stationData: NuntecReservoir[]
+) {
     const { user, role } = useAuth();
 
     // Filter States
     const [viewType, setViewType] = useState<'FISICO' | 'VIRTUAL'>('FISICO');
     const [selectedFazenda, setSelectedFazenda] = useState<string>('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('active');
-    const [monitoringFilter, setMonitoringFilter] = useState<'ok' | 'late' | null>(null);
+    const [monitoringFilter, setMonitoringFilter] = useState<'ok' | 'late' | 'drainage_late' | 'admeasurement_late' | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Active View Objects Configuration
@@ -55,6 +61,33 @@ export function useStationFilters(postos: (Posto & { fazenda: { nome: string } }
                         else {
                             const hours = differenceInHours(new Date(), parseISO(m['measured-at']));
                             matchesMonitoring = hours >= 48;
+                        }
+                    } else if (monitoringFilter === 'drainage_late') {
+                        if (p.exibir_na_drenagem === false) {
+                            matchesMonitoring = false;
+                        } else {
+                            const lastDrainage = drainageData[p.id];
+                            if (!lastDrainage) {
+                                matchesMonitoring = true;
+                            } else {
+                                const days = differenceInHours(new Date(), new Date(lastDrainage)) / 24;
+                                matchesMonitoring = days > 7;
+                            }
+                        }
+                    } else if (monitoringFilter === 'admeasurement_late') {
+                        const reservoirData = stationData.find(r => String(r.id) === String(p.nuntec_reservoir_id)) ||
+                            stationData.find(r => r.nozzleIds?.includes(String(p.nuntec_reservoir_id)));
+                        
+                        if (!reservoirData) {
+                            matchesMonitoring = false;
+                        } else {
+                            const latestAdmeasurement = admeasurements.find(a => reservoirData.nozzleIds?.includes(a['nozzle-id']));
+                            if (!latestAdmeasurement) {
+                                matchesMonitoring = true;
+                            } else {
+                                const days = differenceInHours(new Date(), parseISO(latestAdmeasurement['updated-at'])) / 24;
+                                matchesMonitoring = days > 60;
+                            }
                         }
                     }
                 }

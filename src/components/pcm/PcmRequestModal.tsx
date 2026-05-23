@@ -58,14 +58,35 @@ export function PcmRequestModal({ isOpen, onClose, onSuccess, farms, requestData
   const [selectedFarm, setSelectedFarm] = useState('');
   const [now] = useState(new Date().toISOString());
 
-  // Default para a fazenda do usuário se disponível
-  React.useEffect(() => {
-    if (isOpen && user?.fazenda_id) {
-      setSelectedFarm(user.fazenda_id);
-    } else if (isOpen && farms.length > 0) {
-      setSelectedFarm(farms[0].id);
+  // Reset ou Carregar dados ao abrir o modal
+  useEffect(() => {
+    if (isOpen) {
+      if (requestDataToEdit) {
+        setMaquina(requestDataToEdit.maquina || '');
+        setPrioridade(requestDataToEdit.prioridade || 'Normal');
+        setNumRequisicao(requestDataToEdit.num_requisicao || '');
+        setObsPcm(requestDataToEdit.obs_pcm || '');
+        setSelectedFarm(requestDataToEdit.fazenda_id || '');
+        setFile(null);
+        setPreviewUrl(null);
+      } else {
+        // Nova Solicitação
+        setMaquina('');
+        setPrioridade('Normal');
+        setNumRequisicao('');
+        setObsPcm('');
+        setFile(null);
+        setPreviewUrl(null);
+        
+        // Default para a fazenda do usuário ou primeira da lista
+        if (user?.fazenda_id) {
+          setSelectedFarm(user.fazenda_id);
+        } else if (farms.length > 0) {
+          setSelectedFarm(farms[0].id);
+        }
+      }
     }
-  }, [isOpen, user, farms]);
+  }, [isOpen, requestDataToEdit, user, farms]);
 
   if (!isOpen) return null;
 
@@ -116,9 +137,15 @@ export function PcmRequestModal({ isOpen, onClose, onSuccess, farms, requestData
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{requestDataToEdit ? 'Editar Solicitação PCM' : 'Nova Solicitação PCM'}</h2>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">STATUS:</span>
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">RASCUNHO</span>
+              <div className="flex items-center gap-3 mt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">STATUS:</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">RASCUNHO</span>
+                </div>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-500 uppercase tracking-widest bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                  <Clock size={12} /> O lead time inicia após o envio
+                </div>
               </div>
             </div>
           </div>
@@ -207,7 +234,7 @@ export function PcmRequestModal({ isOpen, onClose, onSuccess, farms, requestData
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Observação <span className="text-red-500">*</span></label>
                   <textarea
                     value={obsPcm}
-                    onChange={(e) => setObsPcm(e.target.value)}
+                    onChange={(e) => setObsPcm(e.target.value.toUpperCase())}
                     placeholder="Obrigatório para adicionar itens"
                     className={`w-full px-4 py-3 bg-white border rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 min-h-[120px] resize-none ${
                       !obsPcm ? 'border-red-300 ring-1 ring-red-100 placeholder:text-red-300' : 'border-slate-200'
@@ -229,22 +256,22 @@ export function PcmRequestModal({ isOpen, onClose, onSuccess, farms, requestData
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">MÁQUINA / EQUIPAMENTO *</label>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">EQUIPAMENTO OU MÁQUINA *</label>
                     <input
                       type="text"
                       value={maquina}
-                      onChange={(e) => setMaquina(e.target.value)}
+                      onChange={(e) => setMaquina(e.target.value.toUpperCase())}
                       placeholder="Nome do equipamento"
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">NÚMERO DA REQUISIÇÃO *</label>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 ml-1 uppercase">Nº DA REQUISIÇÃO (UNISISTEM) *</label>
                     <input
                       type="text"
                       value={numRequisicao}
-                      onChange={(e) => setNumRequisicao(e.target.value)}
+                      onChange={(e) => setNumRequisicao(e.target.value.toUpperCase())}
                       placeholder="-"
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
                     />
@@ -334,7 +361,7 @@ export function PcmRequestModal({ isOpen, onClose, onSuccess, farms, requestData
               ) : (
                 <Send size={16} />
               )}
-              {loading ? 'Enviando...' : 'Enviar Cadastro'}
+              {loading ? 'Enviando...' : 'Enviar'}
             </button>
           </div>
         </div>

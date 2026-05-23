@@ -6,14 +6,17 @@ export const directReceiptService = {
         fazenda_id?: string;
         dataInicio?: string;
         dataFim?: string;
+        search?: string;
+        limit?: number;
+        offset?: number;
     }) {
         let query = supabase
             .from('direct_receipts')
             .select(`
-        *,
-        usuario:usuario_id (nome),
-        fazenda:fazenda_id (nome)
-      `)
+                *,
+                usuario:usuario_id (nome),
+                fazenda:fazenda_id (nome)
+            `, { count: 'exact' })
             .order('created_at', { ascending: false });
 
         if (filters?.fazenda_id) {
@@ -25,10 +28,23 @@ export const directReceiptService = {
         if (filters?.dataFim) {
             query = query.lte('data_emissao', filters.dataFim);
         }
+        if (filters?.search) {
+            const s = `%${filters.search}%`;
+            query = query.or(`nota_fiscal.ilike.${s},fornecedor.ilike.${s},responsavel.ilike.${s}`);
+        }
 
-        const { data, error } = await query;
+        // Pagination
+        const limit = filters?.limit || 50;
+        const offset = filters?.offset || 0;
+        query = query.range(offset, offset + limit - 1);
+
+        const { data, error, count } = await query;
         if (error) throw error;
-        return data as DirectReceipt[];
+        
+        return {
+            data: data as DirectReceipt[],
+            count: count || 0
+        };
     },
 
     async createDirectReceipt(data: Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>): Promise<DirectReceipt> {
@@ -67,5 +83,21 @@ export const directReceiptService = {
             .eq('id', id);
 
         if (error) throw error;
+    },
+
+    async updateDirectReceipt(id: string, data: Partial<Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>>): Promise<DirectReceipt> {
+        const { data: record, error } = await supabase
+            .from('direct_receipts')
+            .update(data)
+            .eq('id', id)
+            .select(`
+        *,
+        usuario:usuario_id(nome),
+        fazenda:fazenda_id(nome)
+      `)
+            .single();
+
+        if (error) throw error;
+        return record;
     }
 };

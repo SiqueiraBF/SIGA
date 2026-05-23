@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, File as FileIcon, Package, MapPin, Clock, FileText, User, ClipboardList, CheckCircle2 } from 'lucide-react';
 import { PcmRequest } from '../../services/pcmService';
 import { formatInSystemTime } from '../../utils/dateUtils';
+import { differenceInMinutes } from 'date-fns';
 
 interface PcmDetailsModalProps {
   isOpen: boolean;
@@ -138,6 +139,28 @@ export function PcmDetailsModal({ isOpen, onClose, request }: PcmDetailsModalPro
                     </div>
                   </div>
 
+                  {/* Lead Time Badge */}
+                  {request.data_confirmacao && (
+                    <div className="flex items-center justify-center p-4 bg-slate-50 border border-slate-200 rounded-2xl shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1.5 h-full bg-slate-400"></div>
+                      <div className="text-center">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-1.5">
+                          <Clock size={12} /> Lead Time Total
+                        </div>
+                        <div className="text-xl font-black text-slate-700">
+                          {(() => {
+                            const start = new Date(request.created_at);
+                            const end = new Date(request.data_confirmacao);
+                            const diffMins = differenceInMinutes(end, start);
+                            const hours = Math.floor(diffMins / 60);
+                            const mins = diffMins % 60;
+                            return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4 pt-6 border-t border-slate-100">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Observações do Almoxarifado</label>
@@ -163,6 +186,27 @@ export function PcmDetailsModal({ isOpen, onClose, request }: PcmDetailsModalPro
                         </button>
                       </div>
                     )}
+                  </div>
+                </div>
+              ) : request.status === 'CANCELLED' ? (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center gap-4 p-4 bg-red-50 border border-red-100 rounded-2xl">
+                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-red-600 shadow-sm">
+                      <X size={24} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-red-900">Solicitação Cancelada</h4>
+                      <p className="text-xs text-red-700">Esta requisição foi cancelada pelo criador.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Motivo do Cancelamento</label>
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-sm text-slate-600 leading-relaxed min-h-[100px]">
+                        {request.motivo_cancelamento || 'Sem motivo detalhado.'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (

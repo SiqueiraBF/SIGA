@@ -57,27 +57,27 @@ export const auditService = {
         try {
             console.log('Fetching Audit Data via Serverless Proxy...');
 
-            // Forward the Nuntec complexity to Vercel Node Engine
-            const response = await fetch('/api/audit');
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Serverless Proxy failed to resolve XML payload.');
+            // Forward the Nuntec complexity to Supabase Edge Function
+            const { supabase } = await import('../lib/supabase');
+            
+            const { data, error } = await supabase.functions.invoke('audit', {
+                method: 'GET'
+            });
+
+            if (error) {
+                throw new Error(error.message || 'Edge Function failed to resolve XML payload.');
             }
 
-            const result = await response.json();
-
             return {
-                timestamp: new Date().toISOString(),
-                stats: result.stats as AuditStats,
-                data: result.data as AuditItem[],
+                timestamp: data.timestamp || new Date().toISOString(),
+                stats: data.stats as AuditStats,
+                data: data.data as AuditItem[],
                 isSystemMock: false
             };
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching audit data (Client-Side):', error);
-            console.warn('Falling back to Mock Data.');
-            const mock = mockAuditData();
-            return { ...mock, isSystemMock: true };
+            throw new Error(error.message || 'Falha ao sincronizar e carregar os dados de auditoria.');
         }
     }
 };

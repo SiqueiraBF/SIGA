@@ -36,7 +36,7 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
         if (loading) return;
 
         const data = new FormData(e.currentTarget as HTMLFormElement);
-        const desc = data.get('descricao') as string;
+        const desc = (data.get('descricao') as string)?.toUpperCase();
         if (!desc) {
             alert("Descrição obrigatória");
             return;
@@ -44,8 +44,8 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
 
         onSave({
             descricao: desc,
-            marca: data.get('marca'),
-            referencia: data.get('referencia'),
+            marca: (data.get('marca') as string)?.toUpperCase(),
+            referencia: (data.get('referencia') as string)?.toUpperCase(),
             unidade: data.get('unidade')
         });
 
@@ -83,7 +83,7 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
                         <input
                             name="descricao"
                             type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
                             placeholder="Nome do produto"
                             required
                         />
@@ -93,7 +93,7 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
                         <input
                             name="marca"
                             type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
                             placeholder="-"
                         />
                     </div>
@@ -120,7 +120,7 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
                         <input
                             name="referencia"
                             type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300"
+                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
                             placeholder="-"
                         />
                     </div>

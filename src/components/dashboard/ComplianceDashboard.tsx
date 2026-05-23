@@ -273,8 +273,8 @@ export function ComplianceDashboard({
             const fazendaId = reservoirMap.get(resId);
 
             // 1. Must be a known reservoir
-            // 2. Must NOT be Virtual (we want the physical baseline)
-            if (fazendaId && !virtualReservoirs.has(resId)) {
+            // 2. Must be an actual fueling, not a transfer/drain
+            if (fazendaId && c.type === 'FUELING') {
                 // 3. Must match current Farm Filter
                 if (
                     (!canViewAllFarms && userFazendaId && fazendaId !== userFazendaId) ||
@@ -309,14 +309,7 @@ export function ComplianceDashboard({
 
             {/* Header / Filter */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-                {loadingNuntec && (
-                    <div className="absolute inset-0 bg-white/80 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="flex items-center gap-2 text-blue-600 font-semibold bg-white px-4 py-2 rounded-lg shadow-sm border border-blue-100">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                            Atualizando dados da Nuntec...
-                        </div>
-                    </div>
-                )}
+
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-slate-100 rounded-lg text-slate-600">
                         <ShieldCheck size={24} />
@@ -357,7 +350,24 @@ export function ComplianceDashboard({
                 )}
             </div>
 
-            {/* KPI Cards Row */}
+            {loadingNuntec ? (
+                <div className="space-y-6 animate-pulse">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-slate-100 h-32 rounded-2xl border border-slate-200 shadow-sm"></div>
+                        <div className="bg-slate-100 h-32 rounded-2xl border border-slate-200 shadow-sm"></div>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[400px]">
+                        <div className="bg-slate-100 rounded-xl border border-slate-200 shadow-sm"></div>
+                        <div className="bg-slate-100 rounded-xl border border-slate-200 shadow-sm"></div>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-slate-100 h-64 rounded-xl border border-slate-200 shadow-sm"></div>
+                        <div className="bg-slate-100 h-64 rounded-xl border border-slate-200 shadow-sm"></div>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    {/* KPI Cards Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 1. Total Volume */}
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative overflow-hidden">
@@ -622,7 +632,8 @@ export function ComplianceDashboard({
                     </div>
                 </div>
             </div>
-
-        </div >
+        </>
+    )}
+</div>
     );
 }

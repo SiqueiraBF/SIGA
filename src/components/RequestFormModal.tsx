@@ -26,9 +26,10 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
     analystSelectedItem, setAnalystSelectedItem,
     currentRequestId,
     isNew, isOwner, isAnalystMode, isRegistrar,
-    canEditContext, canEditItems, canDelete, canReopen, hasFullManagement,
+    canEditContext, canEditItems, canEditAttachments, canDelete, canReopen, hasFullManagement,
     handleGlobalAction, handleNotifyWhatsapp, handleDeleteItem,
-    saveItem, analyzeItem
+    saveItem, analyzeItem,
+    attachments, handleUploadAttachment, handleDeleteAttachment
   } = useRequestForm(props);
 
   if (!props.isOpen) return null;
@@ -51,6 +52,11 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
             setContextData={setContextData}
             fazendas={fazendas}
             canEditContext={canEditContext}
+            attachments={attachments}
+            onUploadAttachment={handleUploadAttachment}
+            onDeleteAttachment={handleDeleteAttachment}
+            loading={loading}
+            canEditAttachments={canEditAttachments}
           />
 
           <div className="flex-1 flex flex-col bg-slate-50/50 relative">

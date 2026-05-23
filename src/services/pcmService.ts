@@ -18,12 +18,13 @@ export interface PcmRequest {
   fazenda_id: string;
   created_by: string;
   created_at: string;
-  status: 'PENDING_ALMOXARIFADO' | 'COMPLETED';
+  status: 'PENDING_ALMOXARIFADO' | 'COMPLETED' | 'CANCELLED';
   sc_numero?: string;
   maquina: string;
   prioridade: 'Normal' | 'Urgente';
   num_requisicao: string;
   obs_pcm?: string;
+  motivo_cancelamento?: string;
   anexo_pcm_url?: string;
   data_confirmacao?: string;
   confirmed_by?: string;
@@ -61,6 +62,19 @@ export const pcmService = {
   async createRequest(requestData: Partial<PcmRequest>, file?: File, currentUser?: { id: string, email: string }): Promise<PcmRequest> {
     if (!currentUser || !currentUser.id || !currentUser.email) throw new Error('Usuário autenticado não encontrado ou sem email');
     const userId = currentUser.id;
+
+    // Verificar duplicidade de requisição para a mesma filial (ignora canceladas)
+    const { data: existing } = await supabase
+      .from('pcm_solicitacoes_compras')
+      .select('id')
+      .eq('fazenda_id', requestData.fazenda_id)
+      .eq('num_requisicao', requestData.num_requisicao)
+      .neq('status', 'CANCELLED')
+      .maybeSingle();
+
+    if (existing) {
+      throw new Error(`Já existe uma solicitação ativa com o número de requisição #${requestData.num_requisicao} para esta filial.`);
+    }
 
     let anexo_pcm_url = '';
     if (file) {
@@ -106,16 +120,17 @@ export const pcmService = {
         let cc: string[] = [];
         try {
           const parsed = JSON.parse(paramData.value);
-          to = (parsed.to || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
-          cc = (parsed.cc || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
+          to = (parsed.to || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
+          cc = (parsed.cc || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
         } catch {
           // Fallback legacy
-          to = paramData.value.split(';').map((e: string) => e.trim()).filter((e: string) => e);
+          to = paramData.value.split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
         }
 
         if (to.length > 0) {
           const emailHtml = `
             <h2>Nova Solicitação de Compras (PCM)</h2>
+            <p>Uma nova requisição foi gerada e aguarda a abertura da Solicitação de Compras (SC) no sistema.</p>
             <p><strong>Fazenda:</strong> ${data.fazenda?.nome || 'N/A'}</p>
             <p><strong>Máquina:</strong> ${requestData.maquina}</p>
             <p><strong>Requisição:</strong> ${requestData.num_requisicao}</p>
@@ -129,7 +144,7 @@ export const pcmService = {
             body: {
               to,
               cc: cc.length > 0 ? cc : undefined,
-              subject: `[SIGA] Nova Solicitação PCM - ${requestData.num_requisicao} (${requestData.maquina})`,
+              subject: `[Solicitação PCM] Nova Requisição de Produtos: ${requestData.num_requisicao} | ${data.fazenda?.nome || 'N/A'} | Máquina ${requestData.maquina}`,
               htmlBody: emailHtml,
               fromEmail: currentUser.email,
               attachments: file ? [{
@@ -260,10 +275,10 @@ export const pcmService = {
         let cc: string[] = [];
         try {
           const parsed = JSON.parse(paramData.value);
-          to = (parsed.to || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
-          cc = (parsed.cc || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
+          to = (parsed.to || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
+          cc = (parsed.cc || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
         } catch {
-          to = paramData.value.split(';').map((e: string) => e.trim()).filter((e: string) => e);
+          to = paramData.value.split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
         }
 
         if (to.length > 0) {
@@ -279,26 +294,13 @@ export const pcmService = {
             <p><strong>Requisição:</strong> ${data.num_requisicao}</p>
             <p><strong>Prioridade:</strong> ${data.prioridade}</p>
             <p><strong>Observações Almoxarifado:</strong> ${almoxData.obs_almox || '-'}</p>
-            
-            <br><br>
-            <hr tabindex="-1" style="display:inline-block; width:98%">
-            <div id="divRplyFwdMsg" dir="ltr"><font face="Calibri, sans-serif" style="font-size:11pt" color="#000000">
-            <b>De:</b> ${data.usuario?.nome || 'PCM'} (SIGA)<br>
-            <b>Enviada em:</b> ${new Date(data.created_at).toLocaleString('pt-BR')}<br>
-            <b>Assunto:</b> ${originalSubject}</font>
-            </div>
-            <div style="margin-top: 10px; color: #555;">
-              <p><strong>Máquina:</strong> ${data.maquina}</p>
-              <p><strong>Prioridade:</strong> ${data.prioridade}</p>
-              <p><strong>Observações:</strong> ${data.obs_pcm || '-'}</p>
-            </div>
           `;
           
           const { data: responseData, error: funcError } = await supabase.functions.invoke('send-email', {
             body: {
               to,
               cc: cc.length > 0 ? cc : undefined,
-              subject: `RE: ${originalSubject}`,
+              subject: `[Solicitação PCM] Solicitação de Compras Gerada - SC: ${almoxData.sc_numero} (Req: ${data.num_requisicao}) | ${data.fazenda?.nome || 'N/A'} | Máquina ${data.maquina}`,
               htmlBody: emailHtml,
               fromEmail: currentUser.email,
               replyToGraphMessageId: data.email_graph_message_id || undefined,
@@ -332,5 +334,75 @@ export const pcmService = {
     }
 
     return data;
+  },
+
+  async cancelRequest(id: string, motivo: string, currentUser?: { id: string, email: string }): Promise<void> {
+    if (!currentUser || !currentUser.id || !currentUser.email) throw new Error('Usuário autenticado não encontrado');
+
+    const { data, error } = await supabase
+      .from('pcm_solicitacoes_compras')
+      .update({
+        status: 'CANCELLED',
+        motivo_cancelamento: motivo
+      })
+      .eq('id', id)
+      .select('*, fazenda:fazendas(nome)')
+      .single();
+
+    if (error) throw error;
+
+    // Send Email to Almoxarifado informing about cancellation
+    try {
+      const { data: paramData } = await supabase
+        .from('system_parameters')
+        .select('value')
+        .eq('key', `pcm_to_almox_${data.fazenda_id}`)
+        .single();
+        
+      if (paramData && paramData.value) {
+        let to: string[] = [];
+        let cc: string[] = [];
+        try {
+          const parsed = JSON.parse(paramData.value);
+          to = (parsed.to || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
+          cc = (parsed.cc || '').split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
+        } catch {
+          to = paramData.value.split(/[;,]/).map((e: string) => e.trim()).filter((e: string) => e);
+        }
+
+        if (to.length > 0) {
+          const emailHtml = `
+            <h2>Solicitação de Compras CANCELADA</h2>
+            <p>O usuário criador cancelou a seguinte requisição:</p>
+            <hr>
+            <p><strong>Fazenda:</strong> ${data.fazenda?.nome || 'N/A'}</p>
+            <p><strong>Máquina:</strong> ${data.maquina}</p>
+            <p><strong>Requisição:</strong> ${data.num_requisicao}</p>
+            <p><strong>Motivo do Cancelamento:</strong> <strong style="color: red">${motivo}</strong></p>
+            <br>
+            <p>Nenhuma ação é necessária por parte do almoxarifado.</p>
+          `;
+          
+          const { data: responseData, error: funcError } = await supabase.functions.invoke('send-email', {
+            body: {
+              to,
+              cc: cc.length > 0 ? cc : undefined,
+              subject: `[CANCELADO] Solicitação PCM: ${data.num_requisicao} | ${data.fazenda?.nome || 'N/A'}`,
+              htmlBody: emailHtml,
+              fromEmail: currentUser.email,
+              replyToGraphMessageId: data.email_graph_message_id || undefined,
+              replyToInternetMessageId: data.email_thread_id || undefined
+            }
+          });
+
+          if (funcError || (responseData && responseData.success === false)) {
+            console.error('Erro ao enviar e-mail de cancelamento PCM:', funcError || responseData?.error);
+            toast.error('Cancelamento salvo, mas aviso por e-mail falhou.');
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Falha ao enviar e-mail de cancelamento:', e);
+    }
   }
 };

@@ -3,28 +3,34 @@ import React from 'react';
 import { FileText } from 'lucide-react';
 import { formatInSystemTime } from '../../utils/dateUtils';
 import { Fazenda } from '../../types';
+import { RequestAttachments } from './RequestAttachments';
 
 interface RequestSidePanelProps {
     contextData: any;
     setContextData: (data: any) => void;
     fazendas: Fazenda[];
     canEditContext: boolean;
+    attachments: any[];
+    onUploadAttachment: (file: File) => Promise<void>;
+    onDeleteAttachment: (attachment: any) => Promise<void>;
+    loading?: boolean;
+    canEditAttachments: boolean;
 }
 
 export const RequestSidePanel: React.FC<RequestSidePanelProps> = ({
     contextData,
     setContextData,
     fazendas,
-    canEditContext
+    canEditContext,
+    attachments,
+    onUploadAttachment,
+    onDeleteAttachment,
+    loading,
+    canEditAttachments
 }) => {
     return (
         <div className="w-[340px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
-            <div className="p-6 space-y-6">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                    <FileText size={12} /> Contexto
-                </div>
-
-                <div className="space-y-4">
+            <div className="p-6 space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Data Abertura</label>
                         <input
@@ -84,14 +90,23 @@ export const RequestSidePanel: React.FC<RequestSidePanelProps> = ({
                         <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Observação <span className="text-red-500">*</span></label>
                         <textarea
                             value={contextData.observacao}
-                            onChange={e => setContextData({ ...contextData, observacao: e.target.value })}
+                            onChange={e => setContextData({ ...contextData, observacao: e.target.value.toUpperCase() })}
                             disabled={!canEditContext}
                             placeholder="Obrigatório para adicionar itens"
-                            className={`w-full px-4 py-3 bg-white border rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none ${!contextData.observacao && canEditContext ? 'border-red-300 ring-1 ring-red-100 placeholder:text-red-300' : 'border-slate-200'}`}
+                            className={`w-full px-4 py-3 bg-white border rounded-lg text-slate-700 text-sm focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none uppercase ${!contextData.observacao && canEditContext ? 'border-red-300 ring-1 ring-red-100 placeholder:text-red-300' : 'border-slate-200'}`}
+                        />
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                        <RequestAttachments
+                            attachments={attachments}
+                            onUpload={onUploadAttachment}
+                            onDelete={onDeleteAttachment}
+                            loading={loading}
+                            canEdit={canEditAttachments}
                         />
                     </div>
                 </div>
             </div>
-        </div>
     );
 };

@@ -154,6 +154,15 @@ export function StockSeparationModal({ isOpen, onClose, onSave, request }: Stock
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                             <Package className="text-blue-600" />
                             Separação de Pedido {request.friendly_id ? `#${request.friendly_id}` : request.id.slice(0, 8)}
+                            {request.category && request.category !== 'GERAL' && (
+                                <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wide font-bold ml-2 ${
+                                    request.category === 'SEGURANCA' 
+                                        ? 'bg-orange-50 text-orange-700 border-orange-200' 
+                                        : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                }`}>
+                                    {request.category === 'SEGURANCA' ? '🦺 EPI' : '👕 Uniforme'}
+                                </span>
+                            )}
                         </h2>
                         <p className="text-sm text-slate-500 mt-1">Solicitante: <strong>{request.usuario?.nome}</strong> • {request.fazenda?.nome}</p>
                     </div>

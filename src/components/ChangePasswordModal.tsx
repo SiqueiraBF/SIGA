@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/supabaseService';
+import { supabase } from '../lib/supabase';
 import { Lock, Check, Loader2 } from 'lucide-react';
 
 // UI Kit
@@ -38,12 +39,14 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
 
     setLoading(true);
     try {
-      // Verificar senha atual
-      const userCheck = await db.getUserById(user.id);
+      // Verificar senha atual autenticando contra o cofre
+      const emailToUse = user.email || `${user.login?.toLowerCase()}@nadiana.com.br`;
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password: currentPassword
+      });
 
-      // Nota: Em um sistema real, isso seria feito no backend com hash.
-      // Aqui, comparamos texto plano conforme estrutura atual.
-      if (userCheck && userCheck.senha !== currentPassword) {
+      if (authError) {
         setError('Senha atual incorreta.');
         setLoading(false);
         return;

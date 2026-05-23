@@ -83,6 +83,13 @@ export function FuelingList() {
     }
   }, [location.state, searchParams]);
 
+  // Efeito para garantir período padrão ao entrar na Auditoria
+  useEffect(() => {
+    if (viewMode === 'AUDIT' && !filterStartDate && !filterEndDate) {
+      handleDateRange('7days');
+    }
+  }, [viewMode]);
+
   // Filters & View Mode
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
@@ -91,6 +98,9 @@ export function FuelingList() {
   // New Filters Requested
   const [filterVeiculo, setFilterVeiculo] = useState('');
   const [filterSemMedidor, setFilterSemMedidor] = useState(false);
+  const [filterFazenda, setFilterFazenda] = useState('');
+  const [filterPosto, setFilterPosto] = useState('');
+  const [filterOperador, setFilterOperador] = useState('');
 
   // Filtro Interativo (Similar ao RegistrarDashboard)
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDENTE'>('ALL');
@@ -157,7 +167,24 @@ export function FuelingList() {
   const canViewAllFarms = viewScope === 'ALL' || role?.nome === 'Administrador';
   const targetFarmId = !canViewAllFarms ? user?.fazenda_id : undefined;
 
-  // --- Infinite Query for Abastecimentos ---
+  const isValidDate = (d: string) => {
+    if (!d) return true; // Sem filtro de data = ok
+    // Formato esperado: YYYY-MM-DD (10 chars)
+    if (d.length === 10) {
+      const parts = d.split('-');
+      if (parts.length !== 3) return false;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+      
+      // Validação básica de sanidade
+      return year > 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
+    }
+    return false;
+  };
+
+  const validStartDate = isValidDate(filterStartDate) ? filterStartDate : '';
+  const validEndDate = isValidDate(filterEndDate) ? filterEndDate : '';
 
   const {
     data,
@@ -168,14 +195,14 @@ export function FuelingList() {
     isError
   } = useInfiniteQuery({
     queryKey: ['abastecimentos', {
-      startDate: filterStartDate,
-      endDate: filterEndDate,
+      startDate: validStartDate,
+      endDate: validEndDate,
       farmId: targetFarmId,
     }],
     queryFn: async ({ pageParam = 0 }) => {
       return fuelService.getAbastecimentos({
-        dataInicio: filterStartDate || undefined,
-        dataFim: filterEndDate || undefined,
+        dataInicio: validStartDate || undefined,
+        dataFim: validEndDate || undefined,
         fazenda_id: targetFarmId,
         page: pageParam as number,
         limit: 50
@@ -216,29 +243,25 @@ export function FuelingList() {
 
   // Reload data (invalidate query) when dates change is handled automatically by queryKey
 
-  // Intersection Observer for Infinite Scroll
-  const observerTarget = React.useRef(null);
+  // Intersection Observer for Infinite Scroll - Padrão Callback Ref
+  const observer = React.useRef<IntersectionObserver | null>(null);
+  
+  const lastElementRef = React.useCallback((node: HTMLDivElement | null) => {
+    if (isLoadingAbastecimentos || isFetchingNextPage) return;
+    
+    if (observer.current) observer.current.disconnect();
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries[0].isIntersecting && hasNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 1.0 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
-    return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
       }
-    };
-  }, [observerTarget, hasNextPage, fetchNextPage]);
+    }, { 
+      rootMargin: '250px', // Aumentado para carregar com mais antecedência
+      threshold: 0.1 
+    });
+
+    if (node) observer.current.observe(node);
+  }, [isLoadingAbastecimentos, isFetchingNextPage, hasNextPage, fetchNextPage]);
 
 
   // --- React Query Implementation for Nuntec ---
@@ -341,6 +364,11 @@ export function FuelingList() {
 
   const uniqueVehicles = useMemo(() => {
     const set = new Set(visibleAbastecimentos.map(a => a.veiculo_nome).filter((v): v is string => !!v));
+    return Array.from(set).sort();
+  }, [visibleAbastecimentos]);
+
+  const uniqueOperadores = useMemo(() => {
+    const set = new Set(visibleAbastecimentos.map(a => a.operador).filter((v): v is string => !!v));
     return Array.from(set).sort();
   }, [visibleAbastecimentos]);
 
@@ -455,6 +483,9 @@ export function FuelingList() {
       }
 
       // New Filters
+      if (filterFazenda && String(a.fazenda_id) !== filterFazenda) return false;
+      if (filterPosto && a.posto_id !== filterPosto) return false;
+      if (filterOperador && a.operador !== filterOperador) return false;
       if (filterVeiculo && a.veiculo_nome !== filterVeiculo) return false;
       if (filterSemMedidor && a.tipo_marcador !== 'SEM_MEDIDOR') return false;
 
@@ -476,7 +507,7 @@ export function FuelingList() {
       }
       return true;
     });
-  }, [visibleAbastecimentos, canViewAll, user, activeFilter, selectedPostoId, filterVeiculo, filterSemMedidor, filterStartDate, filterEndDate, searchTerm]);
+  }, [visibleAbastecimentos, canViewAll, user, activeFilter, selectedPostoId, filterVeiculo, filterSemMedidor, filterStartDate, filterEndDate, searchTerm, filterFazenda, filterPosto, filterOperador]);
 
   const sortedList = useMemo(() => {
     return [...filteredList].sort((a, b) => {
@@ -542,6 +573,9 @@ export function FuelingList() {
   const clearFilters = () => {
     setFilterVeiculo('');
     setFilterSemMedidor(false);
+    setFilterFazenda('');
+    setFilterPosto('');
+    setFilterOperador('');
     setFilterStartDate('');
     setFilterEndDate('');
     setSearchTerm('');
@@ -819,16 +853,10 @@ export function FuelingList() {
             <FilterBar
               onSearch={setSearchTerm}
               searchValue={searchTerm}
-              searchPlaceholder="Buscar por Nº, Veículo ou Operador..."
-              onClear={() => {
-                setSearchTerm('');
-                setFilterVeiculo('');
-                setFilterSemMedidor(false);
-                setFilterStartDate('');
-                setFilterEndDate('');
-              }}
+              searchPlaceholder="Buscar Nº, Veículo, Operador, ID Nuntec ou Transf..."
+              onClear={clearFilters}
               hasActiveFilters={
-                !!searchTerm || !!filterVeiculo || filterSemMedidor || !!filterStartDate || !!filterEndDate
+                !!searchTerm || !!filterVeiculo || filterSemMedidor || !!filterStartDate || !!filterEndDate || !!filterFazenda || !!filterPosto || !!filterOperador
               }
               advancedFilters={
                 <>
@@ -867,6 +895,62 @@ export function FuelingList() {
                       {uniqueVehicles.map((v) => (
                         <option key={v} value={v}>
                           {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Building2 size={12} /> Fazenda
+                    </label>
+                    <select
+                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      value={filterFazenda}
+                      onChange={(e) => {
+                         setFilterFazenda(e.target.value);
+                         setFilterPosto(''); // Limpa o posto ao trocar a fazenda
+                      }}
+                    >
+                      <option value="">Todas</option>
+                      {fazendas.map((f) => (
+                        <option key={f.id} value={String(f.id)}>
+                          {f.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <MapPin size={12} /> Posto
+                    </label>
+                    <select
+                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      value={filterPosto}
+                      onChange={(e) => setFilterPosto(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      {postos
+                        .filter((p) => !filterFazenda || String(p.fazenda_id) === filterFazenda)
+                        .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                      <User size={12} /> Operador
+                    </label>
+                    <select
+                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      value={filterOperador}
+                      onChange={(e) => setFilterOperador(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      {uniqueOperadores.map((op) => (
+                        <option key={op} value={op}>
+                          {op}
                         </option>
                       ))}
                     </select>
@@ -1111,7 +1195,7 @@ export function FuelingList() {
                 </table>
 
                 {/* Sentinel for Infinite Scroll */}
-                <div ref={observerTarget} className="h-4 p-4 flex justify-center w-full">
+                <div ref={lastElementRef} className="h-4 p-4 flex justify-center w-full">
                   {isFetchingNextPage && (
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                   )}
@@ -1225,7 +1309,12 @@ export function FuelingList() {
             )}
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <table className="w-full text-left">
+              {isLoadingNuntec ? (
+                <div className="p-4 animate-in fade-in duration-500">
+                  <TableSkeleton rows={5} columns={6} />
+                </div>
+              ) : (
+                <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-600 font-bold text-xs border-b border-slate-200 uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">Data Transferência</th>
@@ -1361,7 +1450,8 @@ export function FuelingList() {
                     })
                   )}
                 </tbody>
-              </table>
+                </table>
+              )}
             </div>
           </div>
         )}

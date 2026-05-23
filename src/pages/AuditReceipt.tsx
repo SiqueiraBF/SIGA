@@ -120,48 +120,47 @@ export function AuditReceipt() {
                         }
                     />
 
-                    {/* Audit Table */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
                             <h2 className="font-semibold text-slate-800">Detalhamento das Entradas</h2>
-                            <span className="text-xs font-bold text-slate-500 uppercase bg-slate-200 px-2 py-1 rounded-md">
-                                {results.filteredItems.length} Registros
-                            </span>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-                                    <tr>
-                                        <th className="px-4 py-3">Status</th>
-                                        <th className="px-4 py-3">NF</th>
-                                        <th className="px-4 py-3">Data/Hora</th>
-                                        <th className="px-4 py-3">Unidade (Fazenda)</th>
-                                        <th className="px-4 py-3 text-right">Volume NF (L)</th>
-                                        <th className="px-4 py-3 text-right">Diferença (L)</th>
-                                        <th className="px-4 py-3 text-right">Diff %</th>
-                                        <th className="px-4 py-3">Conformidade Técnica</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {results.filteredItems.length > 0 ? (
-                                        results.filteredItems.map((item) => (
-                                            <AuditRow
-                                                key={item.id}
-                                                item={item}
-                                                onClick={() => setSelectedItem(item)}
-                                            />
-                                        ))
-                                    ) : (
+                                <span className="text-xs font-bold text-slate-500 uppercase bg-slate-200 px-2 py-1 rounded-md">
+                                    {results.filteredItems.length} Registros
+                                </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                         <tr>
-                                            <td colSpan={8} className="py-12 text-center text-slate-400">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <FilterX size={32} className="opacity-20" />
-                                                    <p>Nenhum registro encontrado com os filtros atuais.</p>
-                                                </div>
-                                            </td>
+                                            <th className="px-4 py-3">Status</th>
+                                            <th className="px-4 py-3">NF</th>
+                                            <th className="px-4 py-3">Data/Hora</th>
+                                            <th className="px-4 py-3">Unidade (Fazenda)</th>
+                                            <th className="px-4 py-3 text-right">Volume NF (L)</th>
+                                            <th className="px-4 py-3 text-right">Diferença (L)</th>
+                                            <th className="px-4 py-3 text-right">Diff %</th>
+                                            <th className="px-4 py-3">Conformidade Técnica</th>
                                         </tr>
-                                    )}
-                                </tbody>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {results.filteredItems.length > 0 ? (
+                                            results.filteredItems.map((item) => (
+                                                <AuditRow
+                                                    key={item.id}
+                                                    item={item}
+                                                    onClick={() => setSelectedItem(item)}
+                                                />
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={8} className="py-12 text-center text-slate-400">
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <FilterX size={32} className="opacity-20" />
+                                                        <p>Nenhum registro encontrado com os filtros atuais.</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
                             </table>
                         </div>
                     </div>

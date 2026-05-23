@@ -1,6 +1,5 @@
-
-import React from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Pencil, Trash2, Search } from 'lucide-react';
 
 interface RequestItemsListProps {
     items: any[];
@@ -23,13 +22,41 @@ export const RequestItemsList: React.FC<RequestItemsListProps> = ({
     handleEditItem,
     handleDeleteItem
 }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredItems = items.filter(item => {
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+            item.descricao?.toLowerCase().includes(term) ||
+            item.marca?.toLowerCase().includes(term) ||
+            item.referencia?.toLowerCase().includes(term) ||
+            item.cod_reduzido_unisystem?.toString().includes(term)
+        );
+    });
+
     return (
-        <div className="flex-1 overflow-hidden relative">
-            <div className="absolute top-0 left-0 right-0 py-2 px-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest z-10">
-                <span>Itens da Solicitação</span>
-                <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-[10px]">{items.length}</span>
+        <div className="flex-1 overflow-hidden relative flex flex-col">
+            <div className="py-2 px-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest z-10 shrink-0">
+                <div className="flex items-center gap-4">
+                    <span>Itens da Solicitação</span>
+                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-[10px]">
+                        {searchTerm ? `${filteredItems.length} de ${items.length}` : items.length}
+                    </span>
+                </div>
+
+                <div className="relative w-64">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        placeholder="Buscar nesta lista..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-medium text-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400 uppercase"
+                    />
+                </div>
             </div>
-            <div className="h-full pt-10 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
                 <div className="min-w-full inline-block align-middle">
                     <div className="border-b border-gray-200">
                         <table className="w-full text-left border-collapse">
@@ -51,7 +78,7 @@ export const RequestItemsList: React.FC<RequestItemsListProps> = ({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {items.map((item, index) => (
+                                {filteredItems.map((item, index) => (
                                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${analystSelectedItem?.id === item.id ? 'bg-purple-50 hover:bg-purple-50' : ''}`}>
                                         <td className="py-2 px-4 text-center text-xs text-slate-400 font-medium">{index + 1}</td>
                                         <td className="py-2 px-4 text-center">
@@ -128,10 +155,10 @@ export const RequestItemsList: React.FC<RequestItemsListProps> = ({
                                         </td>
                                     </tr>
                                 ))}
-                                {items.length === 0 && (
+                                {filteredItems.length === 0 && (
                                     <tr>
-                                        <td colSpan={8} className="py-8 text-center text-slate-400 text-sm italic">
-                                            Nenhum item adicionado.
+                                        <td colSpan={10} className="py-8 text-center text-slate-400 text-sm italic">
+                                            {searchTerm ? 'Nenhum item corresponde à sua busca.' : 'Nenhum item adicionado.'}
                                         </td>
                                     </tr>
                                 )}

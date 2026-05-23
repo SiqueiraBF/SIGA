@@ -61,6 +61,21 @@ const DirectReceiptList = lazy(() =>
 const PcmRequests = lazy(() =>
   import('./pages/PcmRequests').then((module) => ({ default: module.PcmRequests })),
 );
+const SupplierManager = lazy(() =>
+  import('./pages/SupplierManager').then((module) => ({ default: module.SupplierManager })),
+);
+const OutOfDeadlinePayments = lazy(() =>
+  import('./pages/OutOfDeadlinePayments').then((module) => ({ default: module.OutOfDeadlinePayments })),
+);
+const Savings = lazy(() =>
+  import('./pages/Savings').then((module) => ({ default: module.Savings })),
+);
+const LatePaymentsManager = lazy(() =>
+  import('./pages/LatePaymentsManager').then((module) => ({ default: module.LatePaymentsManager })),
+);
+const UsedItemsDashboard = lazy(() =>
+  import('./pages/UsedItemsDashboard').then((module) => ({ default: module.UsedItemsDashboard })),
+);
 const MobileLayout = lazy(() =>
   import('./components/layout/MobileLayout').then((module) => ({ default: module.MobileLayout })),
 );
@@ -163,6 +178,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'fornecedores',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <SupplierManager />
+          </Suspense>
+        ),
+      },
+      {
         path: 'filiais',
         element: (
           <Suspense fallback={<FullScreenLoading />}>
@@ -208,6 +231,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<FullScreenLoading />}>
             <StockRequestList />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'estoque/usados',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <UsedItemsDashboard />
           </Suspense>
         ),
       },
@@ -288,6 +319,30 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<FullScreenLoading />}>
             <PcmRequests />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'pagamentos-atrasados',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <OutOfDeadlinePayments />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'savings',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <Savings />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'registro-pagamentos-atraso',
+        element: (
+          <Suspense fallback={<FullScreenLoading />}>
+            <LatePaymentsManager />
           </Suspense>
         ),
       },

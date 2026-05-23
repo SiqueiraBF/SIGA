@@ -56,7 +56,6 @@ export function StatusIcon({ status, conformity }: { status: string; conformity:
     return <span title="Conforme"><CheckCircle className="text-green-500" size={20} /></span>;
 }
 
-// DT-01: Replaced `any` with the precise AuditItem['analysis'] type
 export function ConformityBadge({ status, details }: { status: string; details: AuditItem['analysis'] }) {
     if (!details || status === 'unknown') return <span className="text-xs text-slate-400">Dados Indisponíveis</span>;
 
@@ -64,7 +63,7 @@ export function ConformityBadge({ status, details }: { status: string; details: 
         return (
             <div className="flex flex-col text-xs text-red-600">
                 <span className="font-bold">NÃO CONFORME</span>
-                <span>Dens: {details.density.toFixed(4)}</span>
+                <span className="scale-90 origin-left">Dens: {details.density.toFixed(4)} | Temp: {details.temperature.toFixed(1)}°C</span>
             </div>
         );
     }

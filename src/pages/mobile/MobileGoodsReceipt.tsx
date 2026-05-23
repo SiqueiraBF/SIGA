@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, User, Truck, MapPin, FileText, Save } from 'lucide-react';
+import { ArrowLeft, Package, User, Truck, MapPin, FileText, Save, ScanLine } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { NativeBarcodeScanner } from '../../components/common/NativeBarcodeScanner';
+import { SupplierFormModal } from '../../components/suppliers/SupplierFormModal';
+import { Building2, UserPlus } from 'lucide-react';
 import { goodsReceiptService } from '../../services/goodsReceiptService';
+import { supplierService } from '../../services/supplierService';
+import { Supplier } from '../../types';
 import { notificationService } from '../../services/notificationService';
 import { format } from 'date-fns';
 
@@ -13,25 +18,30 @@ export function MobileGoodsReceipt() {
 
     // Data Loading states
     const [fazendas, setFazendas] = useState<{ id: string; nome: string }[]>([]);
-    const [historicoFornecedores, setHistoricoFornecedores] = useState<string[]>([]);
+    const [historicoFornecedores, setHistoricoFornecedores] = useState<Supplier[]>([]);
 
     // Form States
+    const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+    const [scannedCnpjNotRegistered, setScannedCnpjNotRegistered] = useState('');
+    const [chaveNfe, setChaveNfe] = useState('');
     const [fornecedor, setFornecedor] = useState('');
     const [notaFiscal, setNotaFiscal] = useState('');
     const [pedido, setPedido] = useState('');
     const [fazendaId, setFazendaId] = useState('');
     const [dataEntrada, setDataEntrada] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
     const [observacoes, setObservacoes] = useState('');
+    const [operationType, setOperationType] = useState<'COMPRA' | 'CONSERTO'>('COMPRA');
 
     const [submitting, setSubmitting] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         loadBaseData();
-        // Setup initial default farm if user has one
-        if (user?.fazenda_id) {
-            setFazendaId(user.fazenda_id);
-        }
+        // REMOVED: Do not set default farm to force manual selection as requested by user
+        // if (user?.fazenda_id) {
+        //     setFazendaId(user.fazenda_id);
+        // }
     }, [user]);
 
     async function loadBaseData() {
@@ -46,14 +56,14 @@ export function MobileGoodsReceipt() {
 
             if (farmsData) {
                 setFazendas(farmsData);
-                // If only one farm exists and user has no bound farm, select it
-                if (farmsData.length === 1 && !fazendaId) {
-                    setFazendaId(farmsData[0].id);
-                }
+                // REMOVED: Do not auto-select even if only one farm exists
+                // if (farmsData.length === 1 && !fazendaId) {
+                //     setFazendaId(farmsData[0].id);
+                // }
             }
 
-            // Fetch distinct suppliers for autocomplete
-            const suppliers = await goodsReceiptService.getDistinctSuppliers();
+            // Fetch suppliers via new service
+            const suppliers = await supplierService.getActive();
             setHistoricoFornecedores(suppliers);
 
         } catch (error) {
@@ -62,6 +72,44 @@ export function MobileGoodsReceipt() {
             setLoading(false);
         }
     }
+
+    const handleChaveNfeScan = async (valor: string) => {
+        const raw = valor.replace(/\D/g, '');
+        setChaveNfe(raw);
+
+        // Se bater os 44 dígitos da CHAVE DE ACESSO NFe
+        if (raw.length === 44) {
+            // Extrair CNPJ (posição 6 a 19 - 14 dígitos)
+            const nfeCnpj = raw.substring(6, 20);
+            
+            // Extrair Número da NF (posição 25 a 33 - 9 dígitos)
+            const nfeNumberAndSeries = raw.substring(25, 34);
+            const nfParseada = parseInt(nfeNumberAndSeries, 10).toString(); // remove zeros esquerda
+
+            setNotaFiscal(nfParseada);
+
+            // Tenta encontrar o fornecedor na base unificada
+            const formattedCnpj = supplierService.formatCnpj(nfeCnpj);
+            const fornecedorEncontrado = historicoFornecedores.find(
+                s => supplierService.formatCnpj(s.cnpj) === formattedCnpj
+            );
+
+            if (fornecedorEncontrado) {
+                setFornecedor(`${fornecedorEncontrado.razao_social} - ${fornecedorEncontrado.cnpj}`);
+                setScannedCnpjNotRegistered('');
+            } else {
+                setFornecedor(formattedCnpj);
+                setScannedCnpjNotRegistered(formattedCnpj);
+            }
+        }
+    };
+
+    const handleSupplierSuccess = (newSupplier: Supplier) => {
+        setHistoricoFornecedores(prev => [newSupplier, ...prev]);
+        setFornecedor(`${newSupplier.razao_social} - ${newSupplier.cnpj}`);
+        setScannedCnpjNotRegistered('');
+        setIsSupplierModalOpen(false);
+    };
 
     const handleSubmit = async () => {
         if (!user?.id) {
@@ -83,14 +131,16 @@ export function MobileGoodsReceipt() {
                 order_number: pedido.trim(),
                 destination_farm_id: fazendaId,
                 entry_at: new Date(dataEntrada).toISOString(),
-                observation_entry: observacoes.trim()
+                observation_entry: observacoes.trim(),
+                operation_type: operationType
             };
 
             const novoRecebimento = await goodsReceiptService.createReceipt(payload);
 
             // 2. Disparar notificação por E-mail (Re-buscamos pra garantir relacoes completas que o email necessita)
             try {
-                const { data: fullReceipt, error: fetchError } = await supabase
+                const { supabase: supabaseClient } = await import('../../lib/supabase');
+                const { data: fullReceipt, error: fetchError } = await supabaseClient
                     .from('goods_receipts')
                     .select('*, destination_farm:destination_farm_id(nome), receiver:receiver_id(nome)')
                     .eq('id', novoRecebimento.id)
@@ -156,12 +206,68 @@ export function MobileGoodsReceipt() {
                     </div>
                 </section>
 
-                {/* Section 2: Origem & Destino */}
+                {/* Section 2: Tipo de Operação */}
+                <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-2 pl-1">Natureza da Operação</label>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                        <button
+                            type="button"
+                            onClick={() => setOperationType('COMPRA')}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                                operationType === 'COMPRA'
+                                    ? 'bg-white text-orange-600 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            COMPRA
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setOperationType('CONSERTO')}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                                operationType === 'CONSERTO'
+                                    ? 'bg-white text-orange-600 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            CONSERTO / DEVOLUÇÃO
+                        </button>
+                    </div>
+                </section>
+
+                {/* Section 3: Origem & Destino */}
                 <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-4">
-                    {/* Fornecedor com Datalist AutoComplete */}
+                    
+                    {/* Leitor Cód Barras */}
+                    <div>
+                        <div className="flex justify-between items-end mb-1">
+                            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest pl-1 flex items-center gap-1.5">
+                                <FileText size={12} className="text-orange-500" /> Cód. de Barras (NFe)
+                            </label>
+                            <button 
+                                onClick={() => setIsScannerOpen(true)}
+                                className="text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold px-2 py-1 rounded-md flex items-center gap-1 transition-colors active:scale-95"
+                            >
+                                <ScanLine size={12} /> LER CÂMERA
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            value={chaveNfe}
+                            onChange={e => handleChaveNfeScan(e.target.value)}
+                            placeholder="Ou bipe/digite a chave..."
+                            className="w-full px-4 py-3 bg-white border-2 border-dashed border-orange-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none text-base text-slate-800 font-mono text-center placeholder:font-sans placeholder:text-slate-400"
+                            autoComplete="off"
+                        />
+                        {chaveNfe.length === 44 && (
+                            <p className="text-xs font-bold text-green-600 mt-1 pl-1">Chave capturada com sucesso!</p>
+                        )}
+                    </div>
+
+                    {/* Fornecedor */}
                     <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1 pl-1 flex items-center gap-1.5">
-                            <Truck size={12} className="text-orange-500" /> Fornecedor *
+                            <Truck size={12} className="text-orange-500" /> {operationType === 'COMPRA' ? 'Fornecedor (Origem)' : 'Fornecedor/Oficina (Destino Final)'} *
                         </label>
                         <input
                             type="text"
@@ -169,20 +275,39 @@ export function MobileGoodsReceipt() {
                             value={fornecedor}
                             onChange={e => setFornecedor(e.target.value)}
                             placeholder="Nome transportadora ou fornecedor..."
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none text-base text-slate-800 font-medium placeholder:text-slate-400 placeholder:font-normal"
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none text-sm text-slate-800 font-medium placeholder:text-slate-400 placeholder:font-normal"
                             autoComplete="off"
                         />
                         <datalist id="fornecedores-historico">
-                            {historicoFornecedores.map((f, i) => (
-                                <option key={i} value={f} />
+                            {historicoFornecedores.map((f) => (
+                                <option key={f.id} value={`${f.razao_social} - ${f.cnpj}`} />
                             ))}
                         </datalist>
+
+                        {/* Aviso de Não Cadastrado */}
+                        {scannedCnpjNotRegistered && (
+                            <div className="mt-2 p-3 bg-red-50 border border-red-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
+                                <div className="flex items-center gap-2">
+                                    <Building2 size={16} className="text-red-500" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[11px] font-black text-red-600 uppercase">Não Cadastrado</span>
+                                        <span className="text-[10px] text-red-500 leading-tight">Este CNPJ é novo no sistema.</span>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsSupplierModalOpen(true)}
+                                    className="bg-red-600 text-white text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1 active:scale-95 transition-transform"
+                                >
+                                    <UserPlus size={14} /> CADASTRAR AGORA
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Fazenda Destino */}
                     <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1 pl-1 flex items-center gap-1.5">
-                            <MapPin size={12} className="text-orange-500" /> Fazenda Destino *
+                            <MapPin size={12} className="text-orange-500" /> {operationType === 'COMPRA' ? 'Fazenda Destino' : 'Fazenda de Origem'} *
                         </label>
                         <select
                             value={fazendaId}
@@ -258,6 +383,25 @@ export function MobileGoodsReceipt() {
                     )}
                 </button>
             </div>
+
+            {/* Modal Extensão da Câmera (Native) */}
+            {isScannerOpen && (
+                <NativeBarcodeScanner 
+                    onClose={() => setIsScannerOpen(false)}
+                    onScan={(barcode) => {
+                        handleChaveNfeScan(barcode);
+                        setIsScannerOpen(false);
+                    }}
+                />
+            )}
+
+            {/* Modal de Cadastro de Fornecedor (Mobile Overlay) */}
+            <SupplierFormModal 
+                isOpen={isSupplierModalOpen}
+                initialCnpj={scannedCnpjNotRegistered}
+                onClose={() => setIsSupplierModalOpen(false)}
+                onSuccess={handleSupplierSuccess}
+            />
         </div>
     );
 }

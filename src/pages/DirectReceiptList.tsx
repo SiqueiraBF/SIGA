@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/ui/PageHeader';
 import { DirectReceiptFormModal } from '../components/direct-receipt/DirectReceiptFormModal';
@@ -60,6 +60,10 @@ export function DirectReceiptList() {
 
     // Filters & Sort State
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 50;
+
     const [fazendaFilter, setFazendaFilter] = useState('');
     const [localFilter, setLocalFilter] = useState('');
     const [dataInicio, setDataInicio] = useState('');
@@ -67,15 +71,30 @@ export function DirectReceiptList() {
     const [sortField, setSortField] = useState<SortField>('created_at');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
+    // Debounce search to avoid too many database calls
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+            setCurrentPage(1); // Reset to first page on new search
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
     // Data Fetching with React Query
-    const { data: receipts = [], isLoading: loadingReceipts } = useQuery({
-        queryKey: ['direct-receipts', fazendaFilter, dataInicio, dataFim],
+    const { data: receiptsResponse = { data: [], count: 0 }, isLoading: loadingReceipts } = useQuery({
+        queryKey: ['direct-receipts', fazendaFilter, dataInicio, dataFim, debouncedSearch, currentPage],
         queryFn: () => directReceiptService.getDirectReceipts({
             fazenda_id: fazendaFilter || undefined,
             dataInicio: dataInicio || undefined,
-            dataFim: dataFim || undefined
+            dataFim: dataFim || undefined,
+            search: debouncedSearch || undefined,
+            limit: itemsPerPage,
+            offset: (currentPage - 1) * itemsPerPage
         })
     });
+
+    const receipts = receiptsResponse.data;
+    const totalCount = receiptsResponse.count;
 
     const { data: fazendas = [], isLoading: loadingFarms } = useQuery({
         queryKey: ['fazendas'],
@@ -118,6 +137,28 @@ export function DirectReceiptList() {
         }
     });
 
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string, data: Partial<Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>> }) =>
+            directReceiptService.updateDirectReceipt(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['direct-receipts'] });
+            toast.success('Registro atualizado com sucesso!');
+        },
+        onError: (error: any) => {
+            console.error('Erro ao atualizar:', error);
+            toast.error('Erro ao atualizar registro.');
+        }
+    });
+
+    const handleUpdate = async (id: string, data: Partial<Omit<DirectReceipt, 'id' | 'created_at' | 'usuario' | 'fazenda'>>) => {
+        await updateMutation.mutateAsync({ id, data });
+    };
+
+    const handleEdit = (receipt: DirectReceipt) => {
+        setSelectedReceipt(receipt);
+        setIsModalOpen(true);
+    };
+
     const handleDelete = async (id: string) => {
         if (!window.confirm('Tem certeza que deseja excluir este registro?')) return;
         deleteMutation.mutate(id);
@@ -152,18 +193,21 @@ export function DirectReceiptList() {
     };
 
     const filteredReceipts = receipts.filter(r => {
+        // Permission Check for Viewing
+        const canView = isAdmin || 
+            (user && role?.permissoes?.gestao_recebimento_direto?.view_scope === 'ALL') ||
+            (user && role?.permissoes?.gestao_recebimento_direto?.view_scope === 'OWN_ONLY' && r.usuario_id === user.id) ||
+            (user && role?.permissoes?.gestao_recebimento_direto?.view_scope === 'SAME_FARM' && r.fazenda_id === user.fazenda_id) ||
+            (!role?.permissoes?.gestao_recebimento_direto); // Legacy fallback
+
+        if (!canView) return false;
+        
         if (localFilter) {
             const rLocal = r.local_recebimento === 'OUTRO' ? r.local_recebimento_outros : r.local_recebimento;
             if (rLocal !== localFilter) return false;
         }
 
-        if (searchTerm) {
-            const searchLower = searchTerm.toLowerCase();
-            const matchesFornecedor = r.fornecedor.toLowerCase().includes(searchLower);
-            const matchesNf = r.nota_fiscal.toLowerCase().includes(searchLower);
-            const matchesResponsavel = r.responsavel.toLowerCase().includes(searchLower);
-            if (!matchesFornecedor && !matchesNf && !matchesResponsavel) return false;
-        }
+        // Note: searchTerm is now handled by the database
         return true;
     });
 
@@ -284,7 +328,7 @@ export function DirectReceiptList() {
                         <HelpCircle size={20} />
                     </button>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => { setSelectedReceipt(null); setIsModalOpen(true); }}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/25 active:scale-95"
                     >
                         <Plus size={18} /> Nova Entrega
@@ -510,13 +554,13 @@ export function DirectReceiptList() {
                                                     {r.data_recebimento && !r.data_recebimento.includes('-') && r.data_recebimento !== 'Não informada' 
                                                         ? r.data_recebimento 
                                                         : (r.data_recebimento && r.data_recebimento !== 'Não informada' 
-                                                            ? format(new Date(r.data_recebimento), 'dd/MM/yyyy') 
+                                                            ? r.data_recebimento.split('-').reverse().join('/') 
                                                             : '-')}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <span className="text-[12px] font-mono font-medium text-slate-500 uppercase whitespace-nowrap">
-                                                    {format(new Date(r.data_emissao), 'dd/MM/yyyy')}
+                                                    {r.data_emissao.split('-').reverse().join('/')}
                                                 </span>
                                             </td>
                                             <td className="px-2.5 py-4 max-w-[120px]">
@@ -527,16 +571,30 @@ export function DirectReceiptList() {
                                             </td>
                                             <td className="px-4 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDelete(r.id);
-                                                        }}
-                                                        className="p-2 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm active:scale-95"
-                                                        title="Excluir"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    {(isAdmin || (user && role?.permissoes?.gestao_recebimento_direto?.edit_scope !== 'NONE' && (role?.permissoes?.gestao_recebimento_direto?.edit_scope === 'ALL' || r.usuario_id === user.id))) && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEdit(r);
+                                                            }}
+                                                            className="p-2 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm active:scale-95"
+                                                            title="Editar"
+                                                        >
+                                                            <Plus size={16} className="rotate-45" />
+                                                        </button>
+                                                    )}
+                                                    {(isAdmin || (user && role?.permissoes?.gestao_recebimento_direto?.delete_scope && role?.permissoes?.gestao_recebimento_direto?.delete_scope !== 'NONE' && (role?.permissoes?.gestao_recebimento_direto?.delete_scope === 'ALL' || r.usuario_id === user.id))) && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDelete(r.id);
+                                                            }}
+                                                            className="p-2 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm active:scale-95"
+                                                            title="Excluir"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -545,10 +603,36 @@ export function DirectReceiptList() {
                             </table>
                         </div>
                     </div>
-                    <div className="flex items-center justify-between text-sm text-slate-500 px-6 mt-4">
-                        <span>
-                            Mostrando {sortedReceipts.length} de {receipts.length} registro(s)
-                        </span>
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 mt-6 pb-4">
+                        <div className="text-sm text-slate-500 font-medium order-2 sm:order-1">
+                            Mostrando <span className="font-bold text-slate-700">{sortedReceipts.length}</span> de <span className="font-bold text-slate-700">{totalCount}</span> registro(s)
+                        </div>
+                        
+                        {totalCount > itemsPerPage && (
+                            <div className="flex items-center gap-2 order-1 sm:order-2">
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                    disabled={currentPage === 1 || loadingReceipts}
+                                    className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-sm"
+                                >
+                                    Anterior
+                                </button>
+                                
+                                <div className="flex items-center gap-1 px-2">
+                                    <span className="text-sm font-bold text-blue-600">{currentPage}</span>
+                                    <span className="text-sm text-slate-400">/</span>
+                                    <span className="text-sm font-medium text-slate-600">{Math.ceil(totalCount / itemsPerPage)}</span>
+                                </div>
+
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / itemsPerPage), prev + 1))}
+                                    disabled={currentPage >= Math.ceil(totalCount / itemsPerPage) || loadingReceipts}
+                                    className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-sm"
+                                >
+                                    Próximo
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </>
             )}
@@ -561,9 +645,11 @@ export function DirectReceiptList() {
 
             <DirectReceiptFormModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => { setIsModalOpen(false); setSelectedReceipt(null); }}
                 onSave={handleSave}
+                onUpdate={handleUpdate}
                 fazendas={fazendas}
+                initialReceipt={selectedReceipt}
             />
 
             {isEmailModalOpen && (

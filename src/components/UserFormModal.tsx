@@ -21,7 +21,7 @@ const userSchema = z.object({
   login: z.string().min(3, 'Login deve ter pelo menos 3 caracteres'),
   email: z.string().email('Email inválido').or(z.literal('')),
   telefone: z.string().optional(),
-  senha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
+  senha: z.string().optional(), // Pode ser opcional na edição
   funcao_id: z.string().min(1, 'Selecione uma função'),
   fazenda_id: z.string().optional(),
   ativo: z.boolean(),
@@ -49,7 +49,7 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
       login: user?.login || '',
       email: user?.email || '',
       telefone: user?.telefone || '',
-      senha: user?.senha || '123',
+      senha: '', // Nunca carrega senha
       funcao_id: user?.funcao_id || '',
       fazenda_id: user?.fazenda_id || '',
       ativo: user?.ativo ?? true,
@@ -75,27 +75,9 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
   };
 
   const generateUniquePassword = () => {
-    let newPass = '';
-    let isUnique = false;
-    let attempts = 0;
-    const existingPasswords = new Set(
-      allUsers.filter((u) => u.id !== user?.id).map((u) => u.senha),
-    );
-
-    while (!isUnique && attempts < 200) {
-      newPass = Math.floor(100000 + Math.random() * 900000).toString();
-      if (!existingPasswords.has(newPass)) {
-        isUnique = true;
-      }
-      attempts++;
-    }
-
-    if (isUnique) {
-      setValue('senha', newPass, { shouldValidate: true });
-      setShowPassword(true);
-    } else {
-      alert('Erro: Não foi possível gerar uma senha única.');
-    }
+    const newPass = Math.floor(100000 + Math.random() * 900000).toString();
+    setValue('senha', newPass, { shouldValidate: true });
+    setShowPassword(true);
   };
 
   const selectedRole = watch('funcao_id');
@@ -116,9 +98,12 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
     if (!currentUser) return;
 
     try {
-      const duplicatePassUser = allUsers.find((u) => u.senha === data.senha && u.id !== user?.id);
-      if (duplicatePassUser) {
-        alert('Erro: Esta senha já está sendo utilizada por outro usuário.');
+      if (!isEditing && (!data.senha || data.senha.length < 6)) {
+        alert('Erro: A senha deve ter pelo menos 6 caracteres para novos usuários.');
+        return;
+      }
+      if (isEditing && data.senha && data.senha.length < 6) {
+        alert('Erro: A nova senha deve ter pelo menos 6 caracteres.');
         return;
       }
 

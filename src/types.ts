@@ -16,7 +16,9 @@ export type Modulo =
   | 'gestao_estoque'
   | 'gestao_nfs'
   | 'gestao_recebimento_direto'
-  | 'solicitacoes_pcm';
+  | 'solicitacoes_pcm'
+  | 'pagamentos_fora_prazo'
+  | 'controle_saving';
 
 export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
 export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
@@ -24,6 +26,7 @@ export type EditScope = 'ALL' | 'OWN_ONLY' | 'OWN_PENDING' | 'NONE';
 export interface ModulePermission {
   view_scope: ViewScope;
   edit_scope: EditScope;
+  delete_scope?: EditScope;
   can_confirm: boolean;
   manage_notifications?: boolean;
   manage_fleet?: boolean;
@@ -46,7 +49,6 @@ export interface Usuario {
   id: string;
   nome: string;
   login: string;
-  senha?: string; // Optional for safety when retrieving
   funcao_id: string;
   fazenda_id?: string; // Nullable if Central user
   ativo: boolean;
@@ -63,6 +65,15 @@ export interface Fazenda {
   id: string;
   nome: string;
   ativo: boolean;
+}
+
+export interface Supplier {
+  id: string;
+  nome_fantasia?: string;
+  razao_social: string;
+  cnpj: string;
+  ativo: boolean;
+  created_at: string;
 }
 
 export type Prioridade = 'Normal' | 'Urgente';
@@ -82,6 +93,7 @@ export interface Solicitacao {
   prioridade: Prioridade;
   status: StatusSolicitacao;
   observacao_geral?: string;
+  data_envio?: string | null;
   created_at?: string;
 }
 
@@ -182,6 +194,7 @@ export interface NuntecConsumption {
   'reservoir-id': string; // Direct link
   'tag-number'?: string;
   'vehicle-plate'?: string;
+  type?: 'FUELING' | 'TRANSFER'; // Para distinguir na auditoria
 }
 
 export type TipoMarcador = 'ODOMETRO' | 'HORIMETRO' | 'SEM_MEDIDOR';
@@ -274,6 +287,7 @@ export interface Material {
 }
 
 export type StockRequestStatus = 'PENDING' | 'SEPARATING' | 'SEPARATED' | 'DELIVERED' | 'CANCELED';
+export type StockRequestCategory = 'GERAL' | 'SEGURANCA' | 'UNIFORME';
 
 export interface StockRequest {
   id: string;
@@ -282,6 +296,7 @@ export interface StockRequest {
   requester_id: string;
   separator_id?: string;
   status: StockRequestStatus | 'DRAFT';
+  category?: StockRequestCategory;
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -331,14 +346,15 @@ export interface GoodsReceipt {
   receiver_id: string;
   entry_at: string; // ISO Date
   supplier: string;
+  operation_type?: 'COMPRA' | 'CONSERTO' | 'RETORNO_CONSERTO';
   destination_farm_id: string;
   invoice_number: string;
   order_number?: string;
-  exit_id?: string; // New FK
-  exit_at?: string; // ISO Date (Nullable) - Kept for legacy/redundancy
-  driver_name?: string; // Kept for legacy/redundancy
-  observation_entry?: string;
-  observation_exit?: string;
+  exit_id?: string | null; // New FK
+  exit_at?: string | null; // ISO Date (Nullable) - Kept for legacy/redundancy
+  driver_name?: string | null; // Kept for legacy/redundancy
+  observation_entry?: string | null;
+  observation_exit?: string | null;
   created_at: string;
 
   // Joins

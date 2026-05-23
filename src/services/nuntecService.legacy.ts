@@ -7,8 +7,8 @@ import { format, parseISO, subHours } from 'date-fns';
 const DEFAULTS = {
   BASE_URL: '/api/nuntec',
   START_DATE_SYNC: '2026-01-01T00:00:00',
-  AUTH_USER: 'integracao.gerente',
-  AUTH_PASS: '54v0imuy',
+  AUTH_USER: 'PROTEGIDO',
+  AUTH_PASS: 'PROTEGIDO',
 };
 
 // Simple in-memory cache for operator names
@@ -17,6 +17,40 @@ const operatorCache = new Map<string, string>();
 /**
  * Service to handle Nuntec API integration
  */
+
+/** Helper para o Proxy Edge Function */
+async function fetchProxy(endpointUrl: string, options: any = {}) {
+  // Extrair apenas o endpoint real (ex: /stations.xml?created_at=...)
+  // endpointUrl geralmente vem como "${config.BASE_URL}/endpoint..." ou "/api/nuntec/endpoint..."
+  let endpoint = endpointUrl;
+  if (endpoint.includes('/api/nuntec')) {
+    endpoint = endpoint.split('/api/nuntec')[1] || endpoint;
+  } else if (endpoint.startsWith('http')) {
+    try {
+      const url = new URL(endpoint);
+      endpoint = url.pathname + url.search;
+    } catch(e) {}
+  }
+  
+  if (!endpoint.startsWith('/')) endpoint = '/' + endpoint;
+
+  const { data, error } = await supabase.functions.invoke('nuntec-proxy', {
+    body: {
+      endpoint: endpoint,
+      method: options.method || 'GET',
+      body: options.body
+    }
+  });
+
+  if (error) {
+    console.error('Nuntec Proxy Error:', error);
+    return new Response(JSON.stringify({ error }), { status: 500, statusText: 'Proxy Error' });
+  }
+
+  // Edge Function retorna string XML. Construímos um Fake Response para manter a interface atual de .text()
+  return new Response(data, { status: 200, statusText: 'OK' });
+}
+
 export const nuntecService = {
   /**
     * Fetches and cross-references detailed audit data (Analysis vs Supplies).
@@ -27,7 +61,7 @@ export const nuntecService = {
     if (!config) return { stats: {}, data: [] };
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       // Fetch last 30 days by default (or configure)
@@ -37,12 +71,12 @@ export const nuntecService = {
 
       // Fetch Analysis, Supplies, Companies, Internal Stations, Fuels, AND Suppliers
       const [analysisRes, suppliesRes, companiesRes, internalStationsRes, fuelsRes, suppliersRes] = await Promise.all([
-        fetch(`${config.BASE_URL}/supply_weight_measurements.xml?created_at=${since}`, { headers }),
-        fetch(`${config.BASE_URL}/supplies.xml?created_at=${since}`, { headers }),
-        fetch(`${config.BASE_URL}/companies.xml`, { headers }), // Fetch companies for mapping
+        fetchProxy(`${config.BASE_URL}/supply_weight_measurements.xml?created_at=${since}`, { headers }),
+        fetchProxy(`${config.BASE_URL}/supplies.xml?created_at=${since}`, { headers }),
+        fetchProxy(`${config.BASE_URL}/companies.xml`, { headers }), // Fetch companies for mapping
         supabase.from('postos').select('id, nome, nuntec_reservoir_id, fazenda:fazendas(nome)').not('nuntec_reservoir_id', 'is', null), // Fetch internal stations
-        fetch(`${config.BASE_URL}/fuels.xml`, { headers }), // Fetch Fuels
-        fetch(`${config.BASE_URL}/suppliers.xml`, { headers }) // Fetch Suppliers
+        fetchProxy(`${config.BASE_URL}/fuels.xml`, { headers }), // Fetch Fuels
+        fetchProxy(`${config.BASE_URL}/suppliers.xml`, { headers }) // Fetch Suppliers
       ]);
 
       if (!analysisRes.ok || !suppliesRes.ok) {
@@ -309,8 +343,8 @@ export const nuntecService = {
    */
   async getReservoirLocationMap(headers: Headers, config: any): Promise<Map<string, string>> {
     try {
-      console.log("DEBUG: Fetching Station Map for Location...");
-      const response = await fetch(`${config.BASE_URL}/stations.xml`, { headers });
+
+      const response = await fetchProxy(`${config.BASE_URL}/stations.xml`, { headers });
       if (!response.ok) {
         console.warn("DEBUG: Failed to fetch stations.xml", response.status);
         return new Map();
@@ -335,7 +369,7 @@ export const nuntecService = {
           }
         }
       }
-      console.log("DEBUG: Station Map Loaded. Size:", map.size);
+
       return map;
 
     } catch (e) {
@@ -355,7 +389,7 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       // Fetch data from the last 72 hours to ensure we cover weekends/holidays
@@ -364,7 +398,7 @@ export const nuntecService = {
       const sinceDate = subHours(now, 72);
       const since = format(sinceDate, "yyyy-MM-dd'T'HH:mm:ss");
 
-      const response = await fetch(
+      const response = await fetchProxy(
         `${config.BASE_URL}/stock_pointings.xml?created_at=${since}`,
         {
           method: 'GET',
@@ -422,10 +456,10 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
-      const response = await fetch(`${config.BASE_URL}/stations.xml`, {
+      const response = await fetchProxy(`${config.BASE_URL}/stations.xml`, {
         method: 'GET',
         headers: headers,
       });
@@ -490,10 +524,10 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
-      const response = await fetch(`${config.BASE_URL}/admeasurements.xml`, {
+      const response = await fetchProxy(`${config.BASE_URL}/admeasurements.xml`, {
         method: 'GET',
         headers: headers,
       });
@@ -554,7 +588,7 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       let sinceDate: Date;
@@ -579,12 +613,12 @@ export const nuntecService = {
       const endDateTime = endDate ? parseISO(`${endDate}T23:59:59`) : new Date();
 
       // 1. Fetch Fuelings (Abastecimentos)
-      const fetchFuelings = fetch(`${config.BASE_URL}/fuelings.xml?updated_at=${sinceStr}`, {
+      const fetchFuelings = fetchProxy(`${config.BASE_URL}/fuelings.xml?updated_at=${sinceStr}`, {
         method: 'GET', headers: headers
       });
 
       // 2. Fetch Transfers (Transferências/Aferições/Drenas)
-      const fetchTransfers = fetch(`${config.BASE_URL}/transfers.xml?updated_at=${sinceStr}`, {
+      const fetchTransfers = fetchProxy(`${config.BASE_URL}/transfers.xml?updated_at=${sinceStr}`, {
         method: 'GET', headers: headers
       });
 
@@ -621,6 +655,7 @@ export const nuntecService = {
               'end-date': endAtStr || endDate || '',
               'reservoir-id': getTagValue(pointingNode, 'reservoir-id') || '',
               'nozzle-id': getTagValue(pointingNode, 'nozzle-number') || undefined,
+              type: 'FUELING',
             };
 
             if (t.id && t['reservoir-id']) {
@@ -672,6 +707,7 @@ export const nuntecService = {
               'end-date': dateStr || endDate || '',
               'reservoir-id': reservoirId || '',
               'nozzle-id': nozzleId || undefined,
+              type: 'TRANSFER',
             };
 
             if (t.id && (t['reservoir-id'] || t['nozzle-id'])) {
@@ -700,14 +736,14 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       const sinceDate = parseISO(startDate);
       const sinceStr = `${startDate}T00:00:00`;
       const endDateTime = parseISO(`${endDate}T23:59:59`);
 
-      const response = await fetch(`${config.BASE_URL}/supplies.xml?created_at=${sinceStr}`, {
+      const response = await fetchProxy(`${config.BASE_URL}/supplies.xml?created_at=${sinceStr}`, {
         method: 'GET',
         headers: headers,
       });
@@ -793,10 +829,10 @@ export const nuntecService = {
     if (!config) return [];
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
-      const response = await fetch(`${config.BASE_URL}/vehicles.xml`, {
+      const response = await fetchProxy(`${config.BASE_URL}/vehicles.xml`, {
         method: 'GET',
         headers: headers,
       });
@@ -870,11 +906,11 @@ export const nuntecService = {
     }
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       // 1. Fetch from API
-      const response = await fetch(
+      const response = await fetchProxy(
         `${config.BASE_URL}/transfers.xml?updated_after=${config.START_DATE_SYNC}`,
         {
           method: 'GET',
@@ -969,7 +1005,7 @@ export const nuntecService = {
     }
 
     try {
-      const response = await fetch(`${myConfig.BASE_URL}/operators/${id}.xml`, {
+      const response = await fetchProxy(`${myConfig.BASE_URL}/operators/${id}.xml`, {
         headers: myHeaders,
       });
       if (!response.ok) return `Operador ${id}`;
@@ -1014,7 +1050,7 @@ export const nuntecService = {
     const url = `${testConfig.base_url || DEFAULTS.BASE_URL}/transfers.xml?updated_after=${testConfig.sync_start_date || DEFAULTS.START_DATE_SYNC
       }&_t=${Date.now()}`;
 
-    const response = await fetch(url, { method: 'GET', headers: headers });
+    const response = await fetchProxy(url, { method: 'GET', headers: headers });
 
     if (response.ok) {
       const text = await response.text();
@@ -1050,11 +1086,11 @@ export const nuntecService = {
     if (!config) return null;
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
 
     try {
       // Fetch transfers from the sync start date to ensure we cover the transfer range
-      const response = await fetch(
+      const response = await fetchProxy(
         `${config.BASE_URL}/transfers.xml?updated_after=${config.START_DATE_SYNC}`,
         {
           method: 'GET',
@@ -1092,7 +1128,6 @@ export const nuntecService = {
    */
   async repairFuelingData(fuelingId: string, nuntecTransferId: string): Promise<boolean> {
     try {
-      console.log(`Reparando dados para abastecimento ${fuelingId} com Transferencia Nuntec ${nuntecTransferId}`);
 
       const transfer = await this.getTransferById(nuntecTransferId);
       if (!transfer) {
@@ -1142,8 +1177,6 @@ export const nuntecService = {
       if (error) throw error;
       if (!candidates || candidates.length === 0) return { total: 0, fixed: 0, errors: 0 };
 
-      console.log(`Encontrados ${candidates.length} registros para reparo.`);
-
       let fixedCount = 0;
       let errorCount = 0;
 
@@ -1175,11 +1208,10 @@ export const nuntecService = {
     if (!config) throw new Error('Integração Nuntec não configurada.');
 
     const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${config.AUTH_USER}:${config.AUTH_PASS}`));
+    // Headers movidos para a Edge Function
     headers.set('Content-Type', 'application/xml');
 
     // 1. Prepare Data
-    console.log('[DEBUG NUNTEC] Data received:', data);
 
     // Extract Numeric IDs from Strings
     const operationId = data.operacao.match(/^(\d+)/)?.[1] || '1'; // Default to 1 if not found
@@ -1188,9 +1220,9 @@ export const nuntecService = {
     // Auto-Lookup Original Transfer if missing
     let sourceTransfer = originalTransfer;
     if (!sourceTransfer && data.nuntec_transfer_id) {
-      console.log('[DEBUG NUNTEC] Fetching source transfer:', data.nuntec_transfer_id);
+
       sourceTransfer = (await this.getTransferById(data.nuntec_transfer_id)) || undefined;
-      console.log('[DEBUG NUNTEC] Source transfer found:', sourceTransfer?.id);
+
     }
 
     // Technical IDs from Original Transfer or Persisted Data
@@ -1240,7 +1272,7 @@ export const nuntecService = {
       const match = data.veiculo_nome.match(/^(\d+)/);
       if (match) {
         vehicleId = match[1];
-        console.log(`[Nuntec] Extracted Vehicle ID from Name: ${vehicleId}`);
+
       }
     }
 
@@ -1249,8 +1281,6 @@ export const nuntecService = {
       console.warn(`[Nuntec] No numeric Vehicle ID found (Orig: ${data.veiculo_id}, Name: ${data.veiculo_nome}). Fallback to 0.`);
       vehicleId = '0';
     }
-
-    console.log('[DEBUG NUNTEC] Vehicle ID:', vehicleId, 'Amount:', amount);
 
     // Operator ID: Must be numeric.
     // If not numeric, fall back to default '24'.
@@ -1279,8 +1309,8 @@ export const nuntecService = {
     `.trim();
 
     // 3. Send POST Fueling
-    console.log('[Nuntec API] Sending Fueling XML:', xml);
-    const response = await fetch(`${config.BASE_URL}/fuelings.xml`, {
+
+    const response = await fetchProxy(`${config.BASE_URL}/fuelings.xml`, {
       method: 'POST',
       headers,
       body: xml
@@ -1291,8 +1321,6 @@ export const nuntecService = {
       console.error('[Nuntec API Error] Status:', response.status, 'Body:', errorText);
       throw new Error(`Erro Nuntec (${response.status}): ${errorText}`);
     }
-
-    console.log('[Nuntec API] Response received successfully');
 
     // Parse response to find ID
     const responseText = await response.text();
@@ -1314,8 +1342,7 @@ export const nuntecService = {
             </${tag}>
         `.trim();
 
-      console.log(`[Nuntec API] Sending ${tag} XML:`, metricXml);
-      await fetch(`${config.BASE_URL}/${type}.xml`, {
+      await fetchProxy(`${config.BASE_URL}/${type}.xml`, {
         method: 'POST',
         headers,
         body: metricXml
@@ -1442,3 +1469,4 @@ function getTagValue(parent: Element, tag: string): string | null {
 
   return null;
 }
+

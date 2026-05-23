@@ -78,11 +78,7 @@ export const notificationService = {
             });
             */
 
-      console.group('🔔 NOTIFICAÇÃO AUTOMÁTICA (SIMULAÇÃO)');
-      console.log(`DE: Sistema Nadiana`);
-      console.log(`PARA: ${user.nome} (${cleanPhone})`);
-      console.log(`MENSAGEM:\n${message}`);
-      console.groupEnd();
+      console.log(`[NOTIFICATION] Sending WhatsApp message to: ${user.id}`);
 
       return true;
     } catch (error) {
@@ -183,9 +179,12 @@ export const notificationService = {
 
       const dateStr = new Date(receipt.entry_at).toLocaleString('pt-BR');
 
+      const isConserto = receipt.operation_type === 'CONSERTO';
+      const titlePrefix = isConserto ? 'Recebimento de Conserto/Devolução' : 'Novo Recebimento de Mercadoria';
+
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; background-color: #ffffff;">
-          <h2 style="color: #333; font-size: 20px; font-weight: bold; margin-bottom: 5px;">Novo Recebimento de Mercadoria - ${receipt.destination_farm?.nome || 'Fazenda'}</h2>
+          <h2 style="color: #333; font-size: 20px; font-weight: bold; margin-bottom: 5px;">${titlePrefix} - ${receipt.destination_farm?.nome || 'Fazenda'}</h2>
           
           <p style="margin-top: 5px; margin-bottom: 20px; color: #333;"><strong>Data:</strong> ${dateStr}</p>
           <p style="color: #333; margin-bottom: 20px;">Informamos que um novo recebimento de mercadoria foi registrado no sistema com os seguintes detalhes:</p>
@@ -209,7 +208,7 @@ export const notificationService = {
                 </td>
               </tr>
               <tr>
-                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #7a899e; font-weight: bold;">Fazenda Destino:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #7a899e; font-weight: bold;">${isConserto ? 'Fazenda de Origem:' : 'Fazenda Destino:'}</td>
                 <td style="padding: 16px; border-bottom: 1px solid #f3f4f6; color: #111827;">${receipt.destination_farm?.nome || '-'}</td>
               </tr>
               <tr>
@@ -238,7 +237,7 @@ export const notificationService = {
         body: {
           to,
           cc,
-          subject: `[Entrada CD] ${receipt.supplier} - NF ${receipt.invoice_number} - ${receipt.destination_farm?.nome || 'Sem Destino'}`,
+          subject: `[Entrada CD${isConserto ? ' - CONSERTO' : ''}] ${receipt.supplier} - NF ${receipt.invoice_number} - ${receipt.destination_farm?.nome || 'Sem Destino'}`,
           html: htmlBody,
           htmlBody: htmlBody,
           fromEmail: senderEmail,
@@ -297,7 +296,10 @@ export const notificationService = {
             const rowDate = item.entry_at || item.entry_date ? new Date(item.entry_at || item.entry_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
             return `
         <tr>
-          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #333;">${item.supplier || '-'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #333;">
+            ${item.supplier || '-'}
+            ${item.operation_type === 'CONSERTO' ? '<br/><span style="display: inline-block; margin-top: 4px; font-size: 10px; background-color: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-weight: bold;">CONSERTO</span>' : ''}
+          </td>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #111827; font-weight: bold;">${item.invoice_number || '-'}</td>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #111827;">${item.order_number || '-'}</td>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #7a899e; font-size: 11px;">${rowDate}</td>
@@ -309,7 +311,7 @@ export const notificationService = {
 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; color: #333; max-width: 900px; margin: 0 auto; background-color: #ffffff;">
-          <h2 style="color: #333; font-size: 20px; font-weight: bold; margin-bottom: 5px;">Nova Saída de Mercadoria - ${exit.destination_farm?.nome || 'Fazenda'}</h2>
+          <h2 style="color: #333; font-size: 20px; font-weight: bold; margin-bottom: 5px;">Nova Saída de Mercadoria - Rota ${exit.destination_farm?.nome || 'Fazenda'}</h2>
           
           <p style="margin-top: 5px; margin-bottom: 20px; color: #333;"><strong>Data da Saída:</strong> ${dateStr}</p>
           <p style="color: #333; margin-bottom: 20px;">Informamos que uma nova expedição de mercadorias foi registrada com os seguintes detalhes:</p>
@@ -321,7 +323,7 @@ export const notificationService = {
                 <td style="padding: 16px; border-bottom: 1px solid #f0f0f0; color: #111827; font-weight: bold;">${exit.driver_name}</td>
               </tr>
               <tr>
-                <td style="padding: 16px; border-bottom: 1px solid #f0f0f0; color: #7a899e; font-weight: bold;">Fazenda Destino:</td>
+                <td style="padding: 16px; border-bottom: 1px solid #f0f0f0; color: #7a899e; font-weight: bold;">Rota (Fazenda vinculada):</td>
                 <td style="padding: 16px; border-bottom: 1px solid #f0f0f0; color: #111827;">${exit.destination_farm?.nome || '-'}</td>
               </tr>
               <tr>

@@ -12,6 +12,14 @@ interface PaymentDetailsModalProps {
   canDelete?: boolean;
 }
 
+const formatLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+};
+
 export function PaymentDetailsModal({ payment, isOpen, onClose, onPrint, onDelete, canDelete }: PaymentDetailsModalProps) {
   const { role } = useAuth();
   const isAdmin = role?.nome === 'Administrador';
@@ -86,17 +94,17 @@ export function PaymentDetailsModal({ payment, isOpen, onClose, onPrint, onDelet
 
             <hr className="my-6 border-slate-100" />
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-6">
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Calendar size={12}/> Vencimento</p>
                 <p className="text-sm font-medium text-slate-500 line-through">
-                  {new Date(payment.data_vencimento).toLocaleDateString('pt-BR')}
+                  {formatLocalDate(payment.data_vencimento)}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Calendar size={12}/> Prog. Pagamento</p>
                 <p className="text-sm font-bold text-rose-600">
-                  {new Date(payment.data_pgto).toLocaleDateString('pt-BR')}
+                  {formatLocalDate(payment.data_pgto)}
                 </p>
               </div>
               <div>
@@ -107,6 +115,10 @@ export function PaymentDetailsModal({ payment, isOpen, onClose, onPrint, onDelet
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><User size={12}/> Solicitante</p>
                 <p className="text-sm font-bold text-slate-700">{payment.usuario?.nome || 'N/A'}</p>
                 <p className="text-xs text-slate-500">{payment.setor}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><User size={12}/> Responsável</p>
+                <p className="text-sm font-bold text-slate-700">{payment.responsavel || 'N/A'}</p>
               </div>
             </div>
           </div>
@@ -136,7 +148,7 @@ export function PaymentDetailsModal({ payment, isOpen, onClose, onPrint, onDelet
                   <div>
                     <p className="text-xs font-bold text-teal-700/70 uppercase mb-1">Quando? (Data Limite)</p>
                     <p className="text-sm font-bold text-teal-900">
-                      {new Date(parsedActionPlan.quando + 'T00:00:00').toLocaleDateString('pt-BR')}
+                      {formatLocalDate(parsedActionPlan.quando)}
                     </p>
                   </div>
                   <div>

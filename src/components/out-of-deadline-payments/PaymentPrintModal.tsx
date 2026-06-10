@@ -8,6 +8,14 @@ interface PaymentPrintModalProps {
   payment: OutOfDeadlinePayment | null;
 }
 
+const formatLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+};
+
 export function PaymentPrintModal({ isOpen, onClose, payment }: PaymentPrintModalProps) {
   if (!isOpen || !payment) return null;
 
@@ -66,26 +74,30 @@ export function PaymentPrintModal({ isOpen, onClose, payment }: PaymentPrintModa
         </div>
 
         {/* Dados Principais */}
-        <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-6 text-sm border-b border-gray-300 pb-6">
-          <div>
+        <div className="grid grid-cols-3 gap-x-6 gap-y-4 mb-6 text-sm border-b border-gray-300 pb-6">
+          <div className="col-span-1">
             <p className="text-xs font-bold text-gray-500 uppercase">Unidade (Fazenda)</p>
             <p className="font-bold text-lg">{payment.fazenda?.nome || 'N/A'}</p>
           </div>
-          <div>
+          <div className="col-span-2">
             <p className="text-xs font-bold text-gray-500 uppercase">Fornecedor</p>
             <p className="font-bold text-lg uppercase">{payment.fornecedor}</p>
           </div>
-          <div>
+          <div className="col-span-1">
             <p className="text-xs font-bold text-gray-500 uppercase">Tipo e Nº Documento</p>
             <p className="font-bold uppercase">{payment.tipo_doc} - Nº {payment.n_doc}</p>
           </div>
-          <div>
-            <p className="text-xs font-bold text-gray-500 uppercase">Responsável pelo Lançamento</p>
-            <p className="font-bold uppercase">{payment.usuario?.nome || 'N/A'} (Setor: {payment.setor})</p>
+          <div className="col-span-1">
+            <p className="text-xs font-bold text-gray-500 uppercase">Responsável</p>
+            <p className="font-bold uppercase">{payment.responsavel || 'N/A'}</p>
           </div>
-          <div>
+          <div className="col-span-1">
             <p className="text-xs font-bold text-gray-500 uppercase">Data do Lançamento</p>
             <p className="font-bold">{new Date(payment.created_at).toLocaleDateString('pt-BR')} às {new Date(payment.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+          <div className="col-span-3">
+            <p className="text-xs font-bold text-gray-500 uppercase">Responsável pelo Lançamento</p>
+            <p className="font-bold uppercase">{payment.usuario?.nome || 'N/A'} (Setor: {payment.setor})</p>
           </div>
         </div>
 
@@ -93,11 +105,11 @@ export function PaymentPrintModal({ isOpen, onClose, payment }: PaymentPrintModa
         <div className="bg-gray-50 border border-gray-300 p-4 rounded-xl mb-6 flex justify-between items-center print:bg-transparent print:border-2">
           <div className="text-center w-1/3 border-r border-gray-300">
             <p className="text-xs font-bold text-gray-500 uppercase">Vencimento Original</p>
-            <p className="font-bold text-lg">{new Date(payment.data_vencimento).toLocaleDateString('pt-BR')}</p>
+            <p className="font-bold text-lg">{formatLocalDate(payment.data_vencimento)}</p>
           </div>
           <div className="text-center w-1/3 border-r border-gray-300">
             <p className="text-xs font-bold text-gray-500 uppercase">Programado para Pagamento</p>
-            <p className="font-bold text-lg">{new Date(payment.data_pgto).toLocaleDateString('pt-BR')}</p>
+            <p className="font-bold text-lg">{formatLocalDate(payment.data_pgto)}</p>
           </div>
           <div className="text-center w-1/3">
             <p className="text-xs font-bold text-gray-500 uppercase">Valor a Pagar</p>
@@ -140,7 +152,7 @@ export function PaymentPrintModal({ isOpen, onClose, payment }: PaymentPrintModa
                     <tbody>
                       <tr>
                         <td className="p-2 border-r border-gray-300 font-medium">
-                          {actionPlanData.quando ? new Date(actionPlanData.quando).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}
+                          {actionPlanData.quando ? formatLocalDate(actionPlanData.quando) : '-'}
                         </td>
                         <td className="p-2 border-r border-gray-300">{actionPlanData.como || '-'}</td>
                         <td className="p-2 font-medium">{actionPlanData.quem || '-'}</td>
@@ -173,7 +185,7 @@ export function PaymentPrintModal({ isOpen, onClose, payment }: PaymentPrintModa
             
             <div className="text-center space-y-2">
               <div className="border-b-2 border-black w-full h-8 mb-2"></div>
-              <p className="font-bold text-sm uppercase">Diretor Geral (Iberê)</p>
+              <p className="font-bold text-sm uppercase">DIRETOR</p>
               <p className="text-xs text-gray-500">Autorização Final</p>
             </div>
           </div>

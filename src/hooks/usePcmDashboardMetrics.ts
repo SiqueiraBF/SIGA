@@ -120,7 +120,7 @@ export function usePcmDashboardMetrics(
             const retentionRanking = requests.filter(r =>
                 matchesFarm(r) &&
                 r.created_at &&
-                isWithinPeriod(r.created_at)
+                (isWithinPeriod(r.created_at) || (r.data_confirmacao && isWithinPeriod(r.data_confirmacao)))
             );
             retentionRanking.sort((a, b) => {
                 const now = new Date();
@@ -131,7 +131,7 @@ export function usePcmDashboardMetrics(
 
             const farmMap = new Map<string, number>();
             requests.forEach(r => {
-                if (r.created_at && isWithinPeriod(r.created_at)) {
+                if (r.created_at && (isWithinPeriod(r.created_at) || (r.data_confirmacao && isWithinPeriod(r.data_confirmacao)))) {
                     const farmName = r.fazenda?.nome || 'Desconhecido';
                     farmMap.set(farmName, (farmMap.get(farmName) || 0) + 1);
                 }

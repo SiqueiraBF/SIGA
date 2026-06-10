@@ -70,3 +70,45 @@ px tsc --noEmit).
 ### Conformidade Visual Elite
 - [ ] O arquivo StockRequestList.tsx n�o deve conter as palavras lert, confirm, <input , <select , ou <button  (nativos). Toda intera��o deve ser feita pelos componentes globais importados de src/components/ui.
 - [ ] O layout deve manter o mesmo aspecto funcional, com hovers flu�dos e a��es intactas.
+
+
+## 2026-06-10T17:44:24Z
+Implement code adjustments for Phase 2 of the "Pagamentos Fora do Prazo" (Out of Deadline Payments) module, including active user and responsible filtering, cascading editing and safe deletion in settings, custom inline modals for sector/responsible quick creation, and PDF layout optimization.
+
+Working directory: c:\Users\bruno.siqueira\OneDrive - NADIANA AGROPECUARIA LTDA\Área de Trabalho\Projetos\Sistema Nadiana
+Integrity mode: development
+
+## Requirements
+
+### R1. Active Filter for Users and Responsibles
+- In the "Responsável" dropdown inside [PaymentFormModal.tsx](file:///c:/Users/bruno.siqueira/OneDrive%20-%20NADIANA%20AGROPECUARIA%20LTDA/Área%20de%20Trabalho/Projetos/Sistema%20Nadiana/src/components/out-of-deadline-payments/PaymentFormModal.tsx), list only active users (obtained from `userService.listActiveUsers()`) and active responsibles (obtained from `outOfDeadlinePaymentService.getResponsibles(true)`).
+- In the "Setor Solicitante" dropdown inside [PaymentFormModal.tsx](file:///c:/Users/bruno.siqueira/OneDrive%20-%20NADIANA%20AGROPECUARIA%20LTDA/Área%20de%20Trabalho/Projetos/Sistema%20Nadiana/src/components/out-of-deadline-payments/PaymentFormModal.tsx), list only active sectors (obtained from `outOfDeadlinePaymentService.getSectors(true)`).
+
+### R2. Replace Browser Dialogs with Elegant Modals
+- In [PaymentFormModal.tsx](file:///c:/Users/bruno.siqueira/OneDrive%20-%20NADIANA%20AGROPECUARIA%20LTDA/Área%20de%20Trabalho/Projetos/Sistema%20Nadiana/src/components/out-of-deadline-payments/PaymentFormModal.tsx), clicking on "+ Cadastrar Novo" for both "Setor Solicitante" and "Responsável" must open custom, inline React modals styled with the "Elite" (Light/Blue Premium) visual identity instead of using `window.prompt`.
+- The styling must follow existing design patterns: backdrop blur, rounded borders, soft shadows, input focus styles, and a responsive active scaling (`active:scale-95`) on buttons.
+
+### R3. Status Toggles, Editing, and Conditional Deletion in Settings
+- Modify [PaymentSettingsModal.tsx](file:///c:/Users/bruno.siqueira/OneDrive%20-%20NADIANA%20AGROPECUARIA%20LTDA/Área%20de%20Trabalho/Projetos/Sistema%20Nadiana/src/components/out-of-deadline-payments/PaymentSettingsModal.tsx) to:
+  - Fetch all sectors and responsibles including inactive ones (`getSectors(false)` and `getResponsibles(false)`).
+  - Add status toggle switches (active/inactive) calling `toggleSectorStatus` and `toggleResponsibleStatus` when clicked.
+  - Add edit controls (pencil icon) to rename a sector or responsible. Rename actions must call `updateSector`/`updateResponsible` which cascade the name change to all corresponding records in `out_of_deadline_payments`.
+  - Check usage using `checkSectorUsage`/`checkResponsibleUsage` when the user clicks the delete button (trash icon). If the sector/responsible is in use (count > 0), block deletion and show a toast warning suggesting deactivation. If not in use, allow deletion.
+
+### R4. Reorganize Print Modal PDF Grid Layout
+- In [PaymentPrintModal.tsx](file:///c:/Users/bruno.siqueira/OneDrive%20-%20NADIANA%20AGROPECUARIA%20LTDA/Área%20de%20Trabalho/Projetos/Sistema%20Nadiana/src/components/out-of-deadline-payments/PaymentPrintModal.tsx), change the details grid layout. Give more space to the "Fornecedor" column by making it take `col-span-2` in the 3-column desktop layout. Distribute the remaining columns (Unidade, Fornecedor, Responsável) so that they have breathing space and do not squeeze.
+
+## Acceptance Criteria
+
+### Form Dropdowns & Custom Modals
+- [ ] Dropdowns for Setor and Responsável in the Payment creation form display only active entries.
+- [ ] "+ Cadastrar Novo" opens custom React modal components matching the system's Elite theme instead of `window.prompt`. Canyons/shadows/active states are respected.
+
+### Settings UI & Integrity Rules
+- [ ] The Sector and Responsible lists in settings show all entries and allow toggling active status.
+- [ ] Editing the name of a Sector or Responsible updates their respective table and cascades name updates to the payments table (tested and confirmed in UI).
+- [ ] Deleting a Sector or Responsible in use is blocked with a friendly warning toast; deleting an unused entry completes successfully.
+
+### PDF Print Layout
+- [ ] Fornecedor detail field in the print PDF has `col-span-2` or equivalent spacing, preventing narrow squeezes.
+- [ ] The app compiles cleanly without type errors via `npx tsc --noEmit`.

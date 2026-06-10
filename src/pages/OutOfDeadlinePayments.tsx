@@ -13,6 +13,14 @@ import { PaymentPrintModal } from '../components/out-of-deadline-payments/Paymen
 import { PaymentDashboard } from '../components/out-of-deadline-payments/PaymentDashboard';
 import { PaymentDetailsModal } from '../components/out-of-deadline-payments/PaymentDetailsModal';
 
+const formatLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+};
+
 export function OutOfDeadlinePayments() {
   const { user, role } = useAuth();
   const isAdmin = role?.nome === 'Administrador';
@@ -80,9 +88,9 @@ export function OutOfDeadlinePayments() {
     if (search) {
       const lowerSearch = search.toLowerCase();
       filtered = filtered.filter(p => 
-        p.fornecedor.toLowerCase().includes(lowerSearch) ||
-        p.n_doc.toLowerCase().includes(lowerSearch) ||
-        p.usuario?.nome?.toLowerCase().includes(lowerSearch)
+          p.fornecedor.toLowerCase().includes(lowerSearch) ||
+          p.n_doc.toLowerCase().includes(lowerSearch) ||
+          p.usuario?.nome?.toLowerCase().includes(lowerSearch)
       );
     }
 
@@ -125,7 +133,7 @@ export function OutOfDeadlinePayments() {
         {canConfig && (
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl font-medium transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl font-medium transition-colors shadow-sm animate-in"
           >
             <Settings size={18} />
             <span className="hidden sm:inline">Configurações</span>
@@ -235,18 +243,20 @@ export function OutOfDeadlinePayments() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="text-slate-500 text-xs line-through whitespace-nowrap" title="Vencimento Original">
-                        {new Date(payment.data_vencimento).toLocaleDateString('pt-BR')}
+                        {formatLocalDate(payment.data_vencimento)}
                       </div>
                       <div className="font-bold text-red-600 whitespace-nowrap" title="Data Programada Pgto">
-                        {new Date(payment.data_pgto).toLocaleDateString('pt-BR')}
+                        {formatLocalDate(payment.data_pgto)}
                       </div>
                     </td>
                     <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
                       R$ {Number(payment.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="font-medium text-slate-800 leading-snug">{payment.usuario?.nome}</div>
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mt-0.5">{payment.setor}</div>
+                      <div className="font-semibold text-slate-800 leading-snug">{payment.responsavel || 'N/A'}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5" title={`Lançado por: ${payment.usuario?.nome || 'N/A'}`}>
+                        Por: {payment.usuario?.nome || 'N/A'} ({payment.setor})
+                      </div>
                     </td>
                   </tr>
                 ))

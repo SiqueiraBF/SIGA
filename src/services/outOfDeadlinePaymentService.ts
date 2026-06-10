@@ -18,6 +18,7 @@ export interface OutOfDeadlinePayment {
   justificativa: string;
   action_plan?: string;
   anexos?: string[];
+  responsavel?: string;
   
   fazenda?: { nome: string };
   usuario?: { nome?: string; email?: string };
@@ -26,6 +27,7 @@ export interface OutOfDeadlinePayment {
 export interface OutOfDeadlinePaymentSector {
   id: string;
   nome: string;
+  ativo: boolean;
 }
 
 export interface OutOfDeadlinePaymentUnit {
@@ -34,14 +36,34 @@ export interface OutOfDeadlinePaymentUnit {
   ativo: boolean;
 }
 
+export interface OutOfDeadlinePaymentResponsible {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
+
+const formatLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr) return 'N/A';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+};
+
 export const outOfDeadlinePaymentService = {
-  async getSectors(): Promise<OutOfDeadlinePaymentSector[]> {
-    const { data, error } = await supabase
+  async getSectors(onlyActive = true): Promise<OutOfDeadlinePaymentSector[]> {
+    let query = supabase
       .from('out_of_deadline_payment_sectors')
       .select('*')
       .order('nome');
+    
+    if (onlyActive) {
+      query = query.eq('ativo', true);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async createSector(nome: string): Promise<OutOfDeadlinePaymentSector> {
@@ -102,6 +124,39 @@ export const outOfDeadlinePaymentService = {
   async deleteUnit(id: string): Promise<void> {
     const { error } = await supabase
       .from('out_of_deadline_payment_units')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async getResponsibles(onlyActive = true): Promise<OutOfDeadlinePaymentResponsible[]> {
+    let query = supabase
+      .from('out_of_deadline_payment_responsibles')
+      .select('*')
+      .order('nome');
+
+    if (onlyActive) {
+      query = query.eq('ativo', true);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createResponsible(nome: string): Promise<OutOfDeadlinePaymentResponsible> {
+    const { data, error } = await supabase
+      .from('out_of_deadline_payment_responsibles')
+      .insert([{ nome }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteResponsible(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('out_of_deadline_payment_responsibles')
       .delete()
       .eq('id', id);
     if (error) throw error;
@@ -181,6 +236,27 @@ export const outOfDeadlinePaymentService = {
         }
 
         if (to.length > 0) {
+          let actionPlanHtml = '';
+          if (paymentData.action_plan) {
+            try {
+              const actionPlan = JSON.parse(paymentData.action_plan);
+              if (actionPlan && typeof actionPlan === 'object') {
+                const formattedQuando = formatLocalDate(actionPlan.quando);
+                actionPlanHtml = `
+                  <br>
+                  <p><strong>Plano de Ação de Melhoria Contínua:</strong></p>
+                  <p><strong>Como (Ação):</strong> ${actionPlan.como || 'N/A'}</p>
+                  <p><strong>Quem (Responsável):</strong> ${actionPlan.quem || 'N/A'}</p>
+                  <p><strong>Quando (Data Limite):</strong> ${formattedQuando}</p>
+                `;
+              } else {
+                actionPlanHtml = `<p><strong>Plano de Ação:</strong> ${paymentData.action_plan}</p>`;
+              }
+            } catch (e) {
+              actionPlanHtml = `<p><strong>Plano de Ação:</strong> ${paymentData.action_plan}</p>`;
+            }
+          }
+
           const emailHtml = `
             <h2>Nova Autorização de Pagamento Fora do Prazo</h2>
             <p>Um novo lançamento de pagamento fora do prazo foi registrado no sistema.</p>
@@ -189,13 +265,14 @@ export const outOfDeadlinePaymentService = {
             <p><strong>Fornecedor:</strong> ${paymentData.fornecedor}</p>
             <p><strong>Tipo Doc:</strong> ${paymentData.tipo_doc} - <strong>Nº:</strong> ${paymentData.n_doc}</p>
             <p><strong>Valor:</strong> R$ ${Number(paymentData.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-            <p><strong>Data Vencimento:</strong> ${new Date(paymentData.data_vencimento as string).toLocaleDateString('pt-BR')}</p>
-            <p><strong>Data Pagamento:</strong> ${new Date(paymentData.data_pgto as string).toLocaleDateString('pt-BR')}</p>
+            <p><strong>Data Vencimento:</strong> ${formatLocalDate(paymentData.data_vencimento)}</p>
+            <p><strong>Data Pagamento:</strong> ${formatLocalDate(paymentData.data_pgto)}</p>
             <br>
             <p><strong>Lançado por:</strong> ${data.usuario?.nome || 'N/A'} (Setor: ${paymentData.setor})</p>
+            <p><strong>Responsável:</strong> ${paymentData.responsavel || 'N/A'}</p>
             <p><strong>Motivo:</strong> ${paymentData.motivo}</p>
             <p><strong>Justificativa:</strong> ${paymentData.justificativa}</p>
-            ${paymentData.action_plan ? `<p><strong>Plano de Ação:</strong> ${paymentData.action_plan}</p>` : ''}
+            ${actionPlanHtml}
             <br>
             <p>Acesse o sistema SIGA para visualizar os detalhes e imprimir o formulário de aprovação.</p>
           `;
@@ -254,5 +331,67 @@ export const outOfDeadlinePaymentService = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  async toggleSectorStatus(id: string, ativo: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('out_of_deadline_payment_sectors')
+      .update({ ativo })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async toggleResponsibleStatus(id: string, ativo: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('out_of_deadline_payment_responsibles')
+      .update({ ativo })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async checkSectorUsage(nome: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('out_of_deadline_payments')
+      .select('*', { count: 'exact', head: true })
+      .eq('setor', nome);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  async checkResponsibleUsage(nome: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('out_of_deadline_payments')
+      .select('*', { count: 'exact', head: true })
+      .eq('responsavel', nome);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  async updateSector(id: string, novoNome: string, antigoNome: string): Promise<void> {
+    const { error: sectorError } = await supabase
+      .from('out_of_deadline_payment_sectors')
+      .update({ nome: novoNome })
+      .eq('id', id);
+    if (sectorError) throw sectorError;
+
+    const { error: paymentError } = await supabase
+      .from('out_of_deadline_payments')
+      .update({ setor: novoNome })
+      .eq('setor', antigoNome);
+    if (paymentError) throw paymentError;
+  },
+
+  async updateResponsible(id: string, novoNome: string, antigoNome: string): Promise<void> {
+    const { error: responsibleError } = await supabase
+      .from('out_of_deadline_payment_responsibles')
+      .update({ nome: novoNome })
+      .eq('id', id);
+    if (responsibleError) throw responsibleError;
+
+    const { error: paymentError } = await supabase
+      .from('out_of_deadline_payments')
+      .update({ responsavel: novoNome })
+      .eq('responsavel', antigoNome);
+    if (paymentError) throw paymentError;
   }
 };

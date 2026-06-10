@@ -2,11 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, AlertCircle, FileText, Calendar, DollarSign, Building2, User, ChevronDown, Paperclip, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { farmService } from '../../services/farmService';
-import { outOfDeadlinePaymentService, OutOfDeadlinePaymentSector } from '../../services/outOfDeadlinePaymentService';
+import { outOfDeadlinePaymentService, OutOfDeadlinePaymentSector, OutOfDeadlinePaymentResponsible } from '../../services/outOfDeadlinePaymentService';
+import { userService } from '../../services/userService';
 import { supplierService } from '../../services/supplierService';
 import { SupplierFormModal } from '../suppliers/SupplierFormModal';
 import { Supplier } from '../../types';
 import toast from 'react-hot-toast';
+import { Modal } from '../ui/Modal';
+import { ModalHeader } from '../ui/ModalHeader';
+import { ModalFooter } from '../ui/ModalFooter';
 
 interface PaymentFormModalProps {
   isOpen: boolean;
@@ -38,10 +42,20 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
   const [farms, setFarms] = useState<any[]>([]);
   const [sectors, setSectors] = useState<OutOfDeadlinePaymentSector[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [responsibles, setResponsibles] = useState<string[]>([]);
 
   // Fornecedor State
   const [supplierSearchOptionsOpen, setSupplierSearchOptionsOpen] = useState(false);
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+
+  // Custom Modals State
+  const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
+  const [newSectorName, setNewSectorName] = useState('');
+  const [sectorModalLoading, setSectorModalLoading] = useState(false);
+
+  const [isResponsibleModalOpen, setIsResponsibleModalOpen] = useState(false);
+  const [newResponsibleName, setNewResponsibleName] = useState('');
+  const [responsibleModalLoading, setResponsibleModalLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     fazenda_id: '',
@@ -56,6 +70,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
     justificativa: '',
     action_plan: '',
     setor: '',
+    responsavel: '',
   });
 
   const [actionPlanData, setActionPlanData] = useState({
@@ -71,6 +86,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
       loadFarms();
       loadSectors();
       loadSuppliers();
+      loadResponsiblesData();
 
       // Pre-fill setor with user's function/role
       if (role?.nome) {
@@ -91,6 +107,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
         justificativa: '',
         action_plan: '',
         setor: '',
+        responsavel: '',
       });
       setActionPlanData({
         quando: '',
@@ -113,7 +130,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
 
   const loadSectors = async () => {
     try {
-      const data = await outOfDeadlinePaymentService.getSectors();
+      const data = await outOfDeadlinePaymentService.getSectors(true);
       setSectors(data);
     } catch (error) {
       console.error(error);
@@ -128,6 +145,84 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
     } catch (error) {
       console.error(error);
       toast.error('Erro ao carregar fornecedores');
+    }
+  };
+
+  const loadResponsiblesData = async () => {
+    try {
+      const [usersData, avulsosData] = await Promise.all([
+        userService.listActiveUsers(),
+        outOfDeadlinePaymentService.getResponsibles(true)
+      ]);
+      const nomes = new Set<string>();
+      usersData.forEach((u: any) => {
+        if (u.nome) nomes.add(u.nome.trim());
+      });
+      avulsosData.forEach((r: any) => {
+        if (r.nome) nomes.add(r.nome.trim());
+      });
+      const sortedNomes = Array.from(nomes).sort((a, b) => a.localeCompare(b));
+      setResponsibles(sortedNomes);
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao carregar responsáveis');
+    }
+  };
+
+  const handleQuickCreateSector = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setNewSectorName('');
+    setIsSectorModalOpen(true);
+  };
+
+  const handleQuickCreateResponsible = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setNewResponsibleName('');
+    setIsResponsibleModalOpen(true);
+  };
+
+  const handleCreateSectorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSectorName.trim()) {
+      toast.error('O nome do setor é obrigatório');
+      return;
+    }
+    setSectorModalLoading(true);
+    try {
+      const newSector = await outOfDeadlinePaymentService.createSector(newSectorName.trim());
+      setSectors(prev => [...prev, newSector].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setFormData(prev => ({ ...prev, setor: newSector.nome }));
+      toast.success('Setor cadastrado com sucesso!');
+      setIsSectorModalOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Erro ao cadastrar setor');
+    } finally {
+      setSectorModalLoading(false);
+    }
+  };
+
+  const handleCreateResponsibleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newResponsibleName.trim()) {
+      toast.error('O nome do responsável é obrigatório');
+      return;
+    }
+    setResponsibleModalLoading(true);
+    try {
+      const newResp = await outOfDeadlinePaymentService.createResponsible(newResponsibleName.trim());
+      setResponsibles(prev => {
+        const updated = Array.from(new Set([...prev, newResp.nome]));
+        return updated.sort((a, b) => a.localeCompare(b));
+      });
+      setFormData(prev => ({ ...prev, responsavel: newResp.nome }));
+      toast.success('Responsável cadastrado com sucesso!');
+      setIsResponsibleModalOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Erro ao cadastrar responsável');
+    } finally {
+      setResponsibleModalLoading(false);
     }
   };
 
@@ -158,7 +253,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.fazenda_id || !formData.data_doc || !formData.tipo_doc || !formData.n_doc || !formData.fornecedor || !formData.data_vencimento || !formData.data_pgto || !formData.valor || !formData.motivo || !formData.justificativa || !formData.setor) {
+    if (!formData.fazenda_id || !formData.data_doc || !formData.tipo_doc || !formData.n_doc || !formData.fornecedor || !formData.data_vencimento || !formData.data_pgto || !formData.valor || !formData.motivo || !formData.justificativa || !formData.setor || !formData.responsavel) {
       toast.error('Preencha todos os campos obrigatórios');
       return;
     }
@@ -189,6 +284,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
         justificativa: formData.justificativa,
         action_plan: showActionPlan ? JSON.stringify(actionPlanData) : undefined,
         setor: formData.setor,
+        responsavel: formData.responsavel,
       }, user ? { id: user.id, email: user.email || '' } : undefined, attachments);
 
       toast.success('Autorização gerada com sucesso! E-mails notificados.');
@@ -231,7 +327,7 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
                 <Building2 size={16} className="text-teal-600" />
                 Dados Principais
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Unidade Nadiana *</label>
                   <select
@@ -248,16 +344,27 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Setor Solicitante *</label>
+                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                    Setor Solicitante *
+                    <button 
+                        type="button" 
+                        onClick={handleQuickCreateSector}
+                        className="text-xs text-teal-600 hover:text-teal-800 font-bold hover:underline"
+                    >
+                        + Cadastrar Novo
+                    </button>
+                  </label>
                   <select
                     name="setor"
                     value={formData.setor}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 cursor-not-allowed outline-none transition-all appearance-none"
-                    disabled
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-teal-500 outline-none transition-all"
                     required
                   >
                     <option value="" disabled>Selecione o Setor...</option>
+                    {formData.setor && !sectors.some(s => s.nome === formData.setor) && (
+                      <option value={formData.setor}>{formData.setor}</option>
+                    )}
                     {sectors.map((s) => (
                       <option key={s.id} value={s.nome}>{s.nome}</option>
                     ))}
@@ -328,6 +435,30 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
                         </div>
                     )}
                   </div>
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                    Responsável *
+                    <button 
+                        type="button" 
+                        onClick={handleQuickCreateResponsible}
+                        className="text-xs text-teal-600 hover:text-teal-800 font-bold hover:underline"
+                    >
+                        + Cadastrar Novo
+                    </button>
+                  </label>
+                  <select
+                    name="responsavel"
+                    value={formData.responsavel}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-teal-500 outline-none transition-all"
+                    required
+                  >
+                    <option value="" disabled>Selecione o Responsável...</option>
+                    {responsibles.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -602,6 +733,94 @@ export function PaymentFormModal({ isOpen, onClose, onSuccess }: PaymentFormModa
           </button>
         </div>
       </div>
+
+      {/* Modal para criar Setor */}
+      <Modal isOpen={isSectorModalOpen} onClose={() => setIsSectorModalOpen(false)} size="sm">
+        <ModalHeader title="Cadastrar Novo Setor" icon={Building2} onClose={() => setIsSectorModalOpen(false)} eliteStyle />
+        <form onSubmit={handleCreateSectorSubmit}>
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                Nome do Setor *
+              </label>
+              <input
+                type="text"
+                value={newSectorName}
+                onChange={(e) => setNewSectorName(e.target.value)}
+                placeholder="Ex: Financeiro"
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-medium text-slate-800"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+          <ModalFooter eliteStyle>
+            <button
+              type="button"
+              onClick={() => setIsSectorModalOpen(false)}
+              className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all active:scale-95"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={sectorModalLoading}
+              className="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-lg shadow-blue-500/25 active:scale-95 flex items-center gap-2"
+            >
+              {sectorModalLoading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Save size={16} />
+              )}
+              Salvar Setor
+            </button>
+          </ModalFooter>
+        </form>
+      </Modal>
+
+      {/* Modal para criar Responsável */}
+      <Modal isOpen={isResponsibleModalOpen} onClose={() => setIsResponsibleModalOpen(false)} size="sm">
+        <ModalHeader title="Cadastrar Novo Responsável" icon={User} onClose={() => setIsResponsibleModalOpen(false)} eliteStyle />
+        <form onSubmit={handleCreateResponsibleSubmit}>
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                Nome do Responsável *
+              </label>
+              <input
+                type="text"
+                value={newResponsibleName}
+                onChange={(e) => setNewResponsibleName(e.target.value)}
+                placeholder="Ex: João Silva"
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-medium text-slate-800"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+          <ModalFooter eliteStyle>
+            <button
+              type="button"
+              onClick={() => setIsResponsibleModalOpen(false)}
+              className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all active:scale-95"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={responsibleModalLoading}
+              className="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-lg shadow-blue-500/25 active:scale-95 flex items-center gap-2"
+            >
+              {responsibleModalLoading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Save size={16} />
+              )}
+              Salvar Responsável
+            </button>
+          </ModalFooter>
+        </form>
+      </Modal>
 
       <SupplierFormModal 
           isOpen={isQuickCreateOpen}

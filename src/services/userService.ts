@@ -9,5 +9,16 @@ export const userService = {
 
         if (error) throw error;
         return data || [];
+    },
+
+    async listActiveUsers() {
+        const { data, error } = await supabase
+            .from('usuarios')
+            .select('id, nome')
+            .eq('ativo', true)
+            .order('nome');
+
+        if (error) throw error;
+        return data || [];
     }
 };

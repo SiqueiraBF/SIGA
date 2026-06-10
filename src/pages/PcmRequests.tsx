@@ -502,7 +502,12 @@ export function PcmRequests() {
           )}
         </>
       ) : (
-        <PcmDashboard />
+        <PcmDashboard 
+          onRowClick={(req) => {
+            setSelectedRequest(req);
+            setIsDetailsModalOpen(true);
+          }}
+        />
       )}
 
       <PcmRequestModal

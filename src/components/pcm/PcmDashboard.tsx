@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { usePcmDashboardMetrics, PeriodFilter } from '../../hooks/usePcmDashboardMetrics';
+import { PcmRequest } from '../../services/pcmService';
 import StatsCard from '../ui/StatsCard';
 import { Clock, AlertTriangle, Calendar, ArrowDownCircle, ArrowUpCircle, ClipboardList, Settings, Wrench } from 'lucide-react';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
@@ -20,7 +21,11 @@ import { EmptyState } from '../ui/EmptyState';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
-export function PcmDashboard() {
+interface PcmDashboardProps {
+    onRowClick?: (req: PcmRequest) => void;
+}
+
+export function PcmDashboard({ onRowClick }: PcmDashboardProps) {
     const [period, setPeriod] = useState<PeriodFilter>('7D');
     const [customStart, setCustomStart] = useState<string>('');
     const [customEnd, setCustomEnd] = useState<string>('');
@@ -321,6 +326,7 @@ export function PcmDashboard() {
                             <tr>
                                 <th className="px-6 py-4 w-16">Pos</th>
                                 <th className="px-6 py-4">Requisição</th>
+                                <th className="px-6 py-4">Solicitação</th>
                                 <th className="px-6 py-4">Unidade / Equipamento</th>
                                 <th className="px-6 py-4">Solicitante</th>
                                 <th className="px-6 py-4 text-right">Tempo Decorrido</th>
@@ -337,13 +343,29 @@ export function PcmDashboard() {
                                 const formattedDiff = `${h}h ${m}m`;
 
                                 return (
-                                    <tr key={req.id} className="hover:bg-slate-50 transition-colors">
+                                    <tr 
+                                        key={req.id} 
+                                        onClick={() => onRowClick?.(req)}
+                                        className="hover:bg-slate-100/70 transition-colors cursor-pointer"
+                                    >
                                         <td className="px-6 py-4 font-mono font-bold text-slate-400">
                                             #{index + 1}
                                         </td>
                                         <td className="px-6 py-4 font-mono text-slate-600 font-medium">
                                             #{req.num_requisicao}
                                             <div className="text-[10px] text-slate-400 mt-0.5">{format(entryTime, 'dd/MM/yyyy HH:mm')}</div>
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-slate-600 font-medium">
+                                            {req.sc_numero ? (
+                                                <>
+                                                    #{req.sc_numero}
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                                        {format(parseISO(req.data_confirmacao!), 'dd/MM/yyyy HH:mm')}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <span className="text-slate-400">-</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="font-bold text-slate-800">{req.fazenda?.nome || 'Desconhecido'}</div>

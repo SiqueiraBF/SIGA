@@ -9,6 +9,10 @@ import type {
   Funcao,
   IntegrationConfig,
   AuditLog,
+  PdmCategoria,
+  PdmAbreviacao,
+  PdmGrupoTipo,
+  PdmAiLog,
 } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -652,6 +656,164 @@ export const db = {
       .eq('id', attachmentId);
 
     if (error) throw error;
+  },
+  // System Settings
+  async getSysSetting(key: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('sys_settings')
+      .select('value')
+      .eq('key', key)
+      .single();
+
+    if (error) {
+      console.warn(`Error fetching setting ${key}:`, error);
+      return null;
+    }
+    return data?.value;
+  },
+
+  async updateSysSetting(key: string, value: any, description?: string): Promise<void> {
+    const { error } = await supabase
+      .from('sys_settings')
+      .upsert({ key, value, description, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+
+    if (error) throw error;
+  },
+
+  // AI Edge Function Call
+  async analyzePdmItem(itemData: Partial<ItemSolicitacao>, simulate: boolean = false): Promise<any> {
+    // Garante que a sessão de login está ativa antes de chamar a Edge Function
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Sessão expirada. Recarregue a página (F5) para renovar seu acesso.');
+    }
+
+    const { data, error } = await supabase.functions.invoke('analyze-pdm', {
+      body: {
+        item_id: itemData.id,
+        descricao: itemData.descricao,
+        marca: itemData.marca,
+        referencia: itemData.referencia,
+        unidade: itemData.unidade,
+        simulate: simulate
+      }
+    });
+
+    if (error) throw error;
+    if (data && data.success === false) {
+       throw new Error(data.error);
+    }
+    return data;
+  },
+
+  // PDM Manual Endpoints
+  async getPdmCategorias(): Promise<PdmCategoria[]> {
+    const { data, error } = await supabase
+      .from('pdm_categorias')
+      .select('*')
+      .order('nome');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async updatePdmCategoria(id: string, updates: Partial<PdmCategoria>): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_categorias')
+      .update(updates)
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async deletePdmCategoria(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_categorias')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async insertPdmCategoria(categoria: PdmCategoria): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_categorias')
+      .insert(categoria);
+    if (error) throw error;
+  },
+
+  async getPdmAbreviacoes(): Promise<PdmAbreviacao[]> {
+    const { data, error } = await supabase
+      .from('pdm_abreviacoes')
+      .select('*')
+      .order('termo');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async insertPdmAbreviacao(data: PdmAbreviacao): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_abreviacoes')
+      .insert(data);
+    if (error) throw error;
+  },
+
+  async deletePdmAbreviacao(termo: string): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_abreviacoes')
+      .delete()
+      .eq('termo', termo);
+    if (error) throw error;
+  },
+
+  async getPdmGruposTipos(): Promise<PdmGrupoTipo[]> {
+    const { data, error } = await supabase
+      .from('pdm_grupos_tipos')
+      .select('*')
+      .order('titulo');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async updatePdmGrupoTipo(id: string, updates: Partial<PdmGrupoTipo>): Promise<void> {
+    const { error } = await supabase
+      .from('pdm_grupos_tipos')
+      .update(updates)
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async resetPdmManual(
+    categoriasDefault: PdmCategoria[],
+    gruposDefault: PdmGrupoTipo[],
+    abreviacoesDefault: PdmAbreviacao[]
+  ): Promise<void> {
+    // 1. Delete all current records
+    await supabase.from('pdm_categorias').delete().neq('id', 'dummy');
+    await supabase.from('pdm_grupos_tipos').delete().neq('id', 'dummy');
+    await supabase.from('pdm_abreviacoes').delete().neq('termo', 'dummy');
+
+    // 2. Insert defaults in chunks/batches
+    if (categoriasDefault.length > 0) {
+      const { error } = await supabase.from('pdm_categorias').insert(categoriasDefault);
+      if (error) throw error;
+    }
+    if (gruposDefault.length > 0) {
+      const { error } = await supabase.from('pdm_grupos_tipos').insert(gruposDefault);
+      if (error) throw error;
+    }
+    if (abreviacoesDefault.length > 0) {
+      const { error } = await supabase.from('pdm_abreviacoes').insert(abreviacoesDefault);
+      if (error) throw error;
+    }
+  },
+
+  async getPdmAiLogs(): Promise<PdmAiLog[]> {
+    const { data, error } = await supabase
+      .from('pdm_ai_logs')
+      .select('*')
+      .neq('status_retornado', 'Aprovado')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   },
 };
 

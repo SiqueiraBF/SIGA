@@ -178,6 +178,15 @@ const CONFIGURABLE_MODULES: {
       supportsDelete: true,
     },
     {
+      key: 'registro_pagamentos_atraso',
+      label: 'Registro de Pagamentos (Atrasos)',
+      description: 'Exibição de registro de pagamentos em atraso',
+      supportsConfirm: false,
+      supportsNotifications: false,
+      supportsEditToggle: false,
+      supportsDelete: false,
+    },
+    {
       key: 'controle_saving',
       label: 'Controle de Saving',
       description: 'Gestão de negociações e descontos do setor de suprimentos',
@@ -539,7 +548,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       <option value="ALL">👀 Todos</option>
                                       {mod.key !== 'gestao_estoque' && (
                                         <>
-                                          {mod.key !== 'pagamentos_fora_prazo' && (
+                                          {mod.key !== 'pagamentos_fora_prazo' && mod.key !== 'registro_pagamentos_atraso' && (
                                             <option value="SAME_FARM">🏠 Mesma Fazenda</option>
                                           )}
                                           {mod.key !== 'gestao_postos' && mod.key !== 'gestao_recebimento_direto' && (
@@ -554,6 +563,10 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                 {mod.key === 'solicitacoes_pcm' || mod.key === 'pagamentos_fora_prazo' ? (
                                   <div className="flex items-end pb-1 text-slate-300 text-[10px] italic">
                                     Use as opções ao lado
+                                  </div>
+                                ) : mod.key === 'registro_pagamentos_atraso' ? (
+                                  <div className="flex items-end pb-1 text-slate-400 text-xs italic">
+                                    Apenas visualização permitida
                                   </div>
                                 ) : (
                                   <div>

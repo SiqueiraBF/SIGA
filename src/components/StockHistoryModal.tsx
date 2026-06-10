@@ -58,7 +58,7 @@ export function StockHistoryModal({ material, onClose }: StockHistoryModalProps)
                                 <span>{material.group_name} / {material.sub_group}</span>
                             </div>
                             <div className="mt-2 text-sm font-medium text-slate-700">
-                                Estoque Atual: <span className="text-lg font-bold">{material.current_stock}</span> <span className="text-xs text-slate-400">{material.unit}</span>
+                                Estoque Atual: <span className="text-lg font-bold">{material.current_stock ?? 0}</span> <span className="text-xs text-slate-400">{material.unit}</span>
                             </div>
                         </div>
                     </div>

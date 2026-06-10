@@ -22,33 +22,67 @@ export const supplierService = {
    * Busca todos os fornecedores (Ativos e Inativos) ordenados pela Razão Social
    */
   async getAll(): Promise<Supplier[]> {
-    const { data, error } = await supabase
-      .from('suppliers')
-      .select('*')
-      .order('razao_social', { ascending: true });
+    let allData: Supplier[] = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
 
-    if (error) {
-      console.error(error);
-      throw error;
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .order('razao_social', { ascending: true })
+        .range(from, from + step - 1);
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...(data as Supplier[])];
+        from += step;
+        if (data.length < step) hasMore = false;
+      } else {
+        hasMore = false;
+      }
     }
-    return data as Supplier[] || [];
+    
+    return allData;
   },
 
   /**
    * Busca apenas fornecedores ativos ordenados pela Razão Social
    */
   async getActive(): Promise<Supplier[]> {
-    const { data, error } = await supabase
-      .from('suppliers')
-      .select('*')
-      .eq('ativo', true)
-      .order('razao_social', { ascending: true });
+    let allData: Supplier[] = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
 
-    if (error) {
-      console.error(error);
-      throw error;
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .eq('ativo', true)
+        .order('razao_social', { ascending: true })
+        .range(from, from + step - 1);
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...(data as Supplier[])];
+        from += step;
+        if (data.length < step) hasMore = false;
+      } else {
+        hasMore = false;
+      }
     }
-    return data as Supplier[] || [];
+    
+    return allData;
   },
 
   /**

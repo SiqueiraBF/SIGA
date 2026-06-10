@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, User, Truck, MapPin, FileText, Save, ScanLine } from 'lucide-react';
+import { ArrowLeft, Package, User, Truck, MapPin, FileText, Save, ScanLine, Search, X, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { NativeBarcodeScanner } from '../../components/common/NativeBarcodeScanner';
@@ -23,6 +23,8 @@ export function MobileGoodsReceipt() {
     // Form States
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+    const [isSearchSupplierModalOpen, setIsSearchSupplierModalOpen] = useState(false);
+    const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
     const [scannedCnpjNotRegistered, setScannedCnpjNotRegistered] = useState('');
     const [chaveNfe, setChaveNfe] = useState('');
     const [fornecedor, setFornecedor] = useState('');
@@ -269,20 +271,15 @@ export function MobileGoodsReceipt() {
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1 pl-1 flex items-center gap-1.5">
                             <Truck size={12} className="text-orange-500" /> {operationType === 'COMPRA' ? 'Fornecedor (Origem)' : 'Fornecedor/Oficina (Destino Final)'} *
                         </label>
-                        <input
-                            type="text"
-                            list="fornecedores-historico"
-                            value={fornecedor}
-                            onChange={e => setFornecedor(e.target.value)}
-                            placeholder="Nome transportadora ou fornecedor..."
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none text-sm text-slate-800 font-medium placeholder:text-slate-400 placeholder:font-normal"
-                            autoComplete="off"
-                        />
-                        <datalist id="fornecedores-historico">
-                            {historicoFornecedores.map((f) => (
-                                <option key={f.id} value={`${f.razao_social} - ${f.cnpj}`} />
-                            ))}
-                        </datalist>
+                        <div
+                            onClick={() => setIsSearchSupplierModalOpen(true)}
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
+                        >
+                            <span className={fornecedor ? "text-slate-800 text-sm font-medium truncate" : "text-slate-400 text-sm"}>
+                                {fornecedor || "Tocar para buscar fornecedor..."}
+                            </span>
+                            <Search size={18} className="text-slate-400 shrink-0 ml-2" />
+                        </div>
 
                         {/* Aviso de Não Cadastrado */}
                         {scannedCnpjNotRegistered && (
@@ -387,12 +384,108 @@ export function MobileGoodsReceipt() {
             {/* Modal Extensão da Câmera (Native) */}
             {isScannerOpen && (
                 <NativeBarcodeScanner 
+                    expectedLength={44}
                     onClose={() => setIsScannerOpen(false)}
                     onScan={(barcode) => {
                         handleChaveNfeScan(barcode);
                         setIsScannerOpen(false);
                     }}
                 />
+            )}
+
+            {/* Modal de Busca de Fornecedor */}
+            {isSearchSupplierModalOpen && (
+                <div className="fixed inset-0 bg-white z-[100] flex flex-col animate-in slide-in-from-bottom-4 duration-200">
+                    <div className="bg-orange-600 text-white px-4 pt-6 pb-4 shadow-md flex items-center gap-3">
+                        <button onClick={() => setIsSearchSupplierModalOpen(false)} className="p-2 -ml-2 hover:bg-white/10 rounded-full transition-colors">
+                            <ArrowLeft size={24} />
+                        </button>
+                        <h2 className="text-lg font-black">Selecionar Fornecedor</h2>
+                    </div>
+                    <div className="p-4 bg-slate-50 border-b border-slate-200 sticky top-0 shadow-sm z-10">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input 
+                                type="text"
+                                autoFocus
+                                value={supplierSearchQuery}
+                                onChange={e => setSupplierSearchQuery(e.target.value)}
+                                placeholder="Buscar por nome ou CNPJ..."
+                                className="w-full pl-10 pr-10 py-3 bg-white border border-slate-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none text-base text-slate-800 shadow-inner"
+                            />
+                            {supplierSearchQuery && (
+                                <button 
+                                    onClick={() => setSupplierSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 p-1 hover:text-slate-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-2">
+                        {historicoFornecedores
+                            .filter(f => {
+                                const queryLower = supplierSearchQuery.toLowerCase();
+                                const searchNumbers = supplierSearchQuery.replace(/\D/g, '');
+                                const cnpjNumbers = f.cnpj.replace(/\D/g, '');
+                                
+                                return f.razao_social.toLowerCase().includes(queryLower) || 
+                                       f.cnpj.includes(supplierSearchQuery) ||
+                                       (searchNumbers && cnpjNumbers.includes(searchNumbers)) ||
+                                       (f.nome_fantasia && f.nome_fantasia.toLowerCase().includes(queryLower));
+                            })
+                            .map(f => (
+                                <button
+                                    key={f.id}
+                                    onClick={() => {
+                                        setFornecedor(`${f.razao_social} - ${f.cnpj}`);
+                                        setIsSearchSupplierModalOpen(false);
+                                        setSupplierSearchQuery('');
+                                    }}
+                                    className="w-full text-left p-4 bg-white rounded-xl border border-slate-200 hover:border-orange-400 active:bg-orange-50 active:scale-[0.99] transition-all shadow-sm flex flex-col gap-1"
+                                >
+                                    <p className="font-bold text-slate-800 text-sm">{f.razao_social}</p>
+                                    <div className="flex items-center justify-between w-full">
+                                        <p className="text-xs font-semibold text-slate-500">{supplierService.formatCnpj(f.cnpj)}</p>
+                                        {f.nome_fantasia && <p className="text-[10px] text-slate-400 truncate max-w-[140px] uppercase font-bold tracking-wider">{f.nome_fantasia}</p>}
+                                    </div>
+                                </button>
+                            ))}
+                        
+                        {supplierSearchQuery && (
+                            <button
+                                onClick={() => {
+                                    setFornecedor(supplierSearchQuery);
+                                    setIsSearchSupplierModalOpen(false);
+                                    setSupplierSearchQuery('');
+                                }}
+                                className="w-full mt-4 p-4 border-2 border-dashed border-orange-400 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-sm"
+                            >
+                                <Check size={18} /> Usar "{supplierSearchQuery}"
+                            </button>
+                        )}
+                        {!supplierSearchQuery && historicoFornecedores.length === 0 && (
+                             <div className="text-center text-slate-500 py-8 text-sm font-medium">
+                                Nenhum fornecedor encontrado.
+                             </div>
+                        )}
+                        {supplierSearchQuery && historicoFornecedores.filter(f => {
+                            const queryLower = supplierSearchQuery.toLowerCase();
+                            const searchNumbers = supplierSearchQuery.replace(/\D/g, '');
+                            const cnpjNumbers = f.cnpj.replace(/\D/g, '');
+                            return f.razao_social.toLowerCase().includes(queryLower) || 
+                                   f.cnpj.includes(supplierSearchQuery) ||
+                                   (searchNumbers && cnpjNumbers.includes(searchNumbers)) ||
+                                   (f.nome_fantasia && f.nome_fantasia.toLowerCase().includes(queryLower));
+                        }).length === 0 && (
+                            <div className="text-center py-6 px-4 bg-slate-100 rounded-xl border border-slate-200 mt-4">
+                                <p className="text-sm font-bold text-slate-600 mb-1">Nenhum resultado</p>
+                                <p className="text-xs text-slate-500">Você pode usar o texto digitado usando o botão acima, ou voltar e adicionar a chave da NFe para um cadastro automático.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
 
             {/* Modal de Cadastro de Fornecedor (Mobile Overlay) */}

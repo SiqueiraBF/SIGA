@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, User } from 'lucide-react';
 
 const loginSchema = z.object({
@@ -16,6 +16,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockActive, setCapsLockActive] = useState(false);
@@ -56,7 +57,12 @@ export function Login() {
     try {
       const success = await login(data.login, data.senha);
       if (success) {
-        navigate('/solicitacoes'); // Default redirect
+        let from = location.state?.from?.pathname;
+        if (!from || from === '/login' || from === '/') {
+            const isMobile = window.innerWidth < 768;
+            from = isMobile ? '/app' : '/solicitacoes';
+        }
+        navigate(from, { replace: true });
       } else {
         setError('Credenciais inválidas. Tente novamente.');
       }

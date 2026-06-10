@@ -1,0 +1,1 @@
+Empirically verify correctness. Check that `isLoading` is correctly passed to `ConfirmDialog` to prevent double-submitting. Check that `setTimeout` defers the `onClose()` calls in `StockRequestForm.tsx` properly. Check that `react-hot-toast` usage doesn't cause crashes. Report back when finished.

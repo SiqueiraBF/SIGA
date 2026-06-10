@@ -4,7 +4,7 @@ import { Paperclip, X, File as FileIcon, Image as ImageIcon, Download, Loader2 }
 interface RequestAttachmentsProps {
     attachments: any[];
     onUpload: (file: File) => Promise<void>;
-    onDelete: (attachment: any) => Promise<void>;
+    onDelete: (attachment: any) => void;
     loading?: boolean;
     canEdit?: boolean;
 }

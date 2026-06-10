@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
     X,
     ArrowRightLeft,
@@ -17,7 +18,7 @@ interface TransferGuideModalProps {
 export function TransferGuideModal({ isOpen, onClose }: TransferGuideModalProps) {
     if (!isOpen) return null;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
@@ -104,6 +105,7 @@ export function TransferGuideModal({ isOpen, onClose }: TransferGuideModalProps)
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

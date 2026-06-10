@@ -57,7 +57,8 @@ export function PcmDashboard() {
         volumeByFarm,
         entriesVsExitsByDay,
         totalCriadas,
-        totalFinalizadas
+        totalFinalizadas,
+        retentionRanking
     } = metrics;
 
     const totalWaiting = waitingList.length;
@@ -177,7 +178,7 @@ export function PcmDashboard() {
             {/* Top Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <StatsCard
-                    title="LEAD TIME MÉDIO (RESOLUÇÃO)"
+                    title="SLA ATENDIMENTO MÉDIO"
                     value={leadTimeAverageFormatted}
                     icon={Clock}
                     description="Tempo médio desde a abertura até a conclusão/SC."
@@ -310,7 +311,7 @@ export function PcmDashboard() {
                             <Clock className="text-orange-500" />
                             Ranking de Retenção (Top 10 Tempo de Espera)
                         </h3>
-                        <p className="text-sm text-slate-500">Solicitações abertas até o limite do período analisado que ainda aguardam ação.</p>
+                        <p className="text-sm text-slate-500">As 10 requisições que levaram o maior tempo (em andamento ou finalizadas).</p>
                     </div>
                 </div>
 
@@ -326,10 +327,10 @@ export function PcmDashboard() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {waitingList.slice(0, 10).map((req, index) => {
+                            {retentionRanking.slice(0, 10).map((req, index) => {
                                 const entryTime = parseISO(req.created_at);
-                                const now = new Date();
-                                const diffInMinutes = differenceInMinutes(now, entryTime);
+                                const endTime = req.data_confirmacao ? parseISO(req.data_confirmacao) : new Date();
+                                const diffInMinutes = differenceInMinutes(endTime, entryTime);
 
                                 const h = Math.floor(diffInMinutes / 60);
                                 const m = Math.floor(diffInMinutes % 60);
@@ -360,10 +361,10 @@ export function PcmDashboard() {
                                 );
                             })}
 
-                            {waitingList.length === 0 && (
+                            {retentionRanking.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                                        Nenhuma solicitação aguardando no período. ✨
+                                        Nenhuma solicitação no período. ✨
                                     </td>
                                 </tr>
                             )}

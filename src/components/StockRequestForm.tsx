@@ -1,9 +1,21 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Send, Search, Package, Plus, Trash2, AlertTriangle, ImageIcon, Calendar, User, MapPin, FileText, AlertCircle } from 'lucide-react';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
+import { FormField } from './ui/FormField';
+import { Input } from './ui/Input';
+import { Select } from './ui/Select';
+import { Textarea } from './ui/Textarea';
+import { StatusBadge } from './ui/StatusBadge';
+import { IconButton } from './ui/IconButton';
 import { useAuth } from '../context/AuthContext';
 import { stockService } from '../services/stockService';
 import { db } from '../services/supabaseService';
 import { notificationService } from '../services/notificationService';
+import { EmptyState } from './ui/EmptyState';
+import { formatInSystemTime } from '../utils/dateUtils';
+import toast from 'react-hot-toast';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import type { Material, StockRequest, StockRequestCategory } from '../types';
 
 interface StockRequestFormProps {
@@ -11,9 +23,10 @@ interface StockRequestFormProps {
     onClose: () => void;
     onSave: () => void;
     requestId?: string | null;
+    onSeparar?: (req: StockRequest) => void;
 }
 
-export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRequestFormProps) {
+export function StockRequestForm({ isOpen, onClose, onSave, requestId, onSeparar }: StockRequestFormProps) {
     const { user, role } = useAuth();
 
     // State
@@ -41,6 +54,14 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
     // Image State
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
+
+    const [confirmDialog, setConfirmDialog] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        variant?: 'danger' | 'warning' | 'info';
+        onConfirm: () => void | Promise<void>;
+    }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
     useEffect(() => {
         if (isOpen) {
@@ -99,7 +120,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
             }
         } catch (err) {
             console.error(err);
-            alert("Erro ao carregar");
+            toast.error("Erro ao carregar");
             onClose();
         } finally {
             setLoading(false);
@@ -143,12 +164,13 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
     const handleAddItem = async () => {
         if (!selectedMaterial) return;
-        if (quantity <= 0 || !Number.isInteger(quantity)) return alert("Quantidade deve ser um número inteiro maior que zero");
+        if (quantity <= 0 || !Number.isInteger(quantity)) return void toast.error("Quantidade deve ser um número inteiro maior que zero");
         if (!user) return;
-        if (!selectedFazendaId) return alert("Selecione a Filial antes de adicionar itens.");
+        if (!selectedFazendaId) return void toast.error("Selecione a Filial antes de adicionar itens.");
+        if (!notes || notes.trim() === '') return void toast.error("Observação obrigatória para adicionar itens.");
 
         // Prevent adding duplicate (check locally)
-        if (items.some(i => i.material.id === selectedMaterial.id)) return alert("Item já adicionado na lista");
+        if (items.some(i => i.material?.id === selectedMaterial.id)) return void toast.error("Item já adicionado na lista");
 
         setLoading(true);
         try {
@@ -176,7 +198,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
             setSearchQuery('');
             setQuantity(1);
         } catch (err: any) {
-            alert("Erro ao salvar item: " + err.message);
+            toast.error("Erro ao salvar item: " + err.message);
         } finally {
             setLoading(false);
         }
@@ -184,61 +206,83 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
     const handleRemoveItem = async (index: number) => {
         const item = items[index];
-        if (!item.id) return; // Should not happen if persisted
+        const itemId = item.id;
+        if (!itemId) return; // Should not happen if persisted
 
-        if (!confirm("Remover este item?")) return;
-
-        setLoading(true);
-        try {
-            await stockService.removeItem(item.id);
-            if (request) {
-                await refreshItems(request.id);
-            } else {
-                setItems(items.filter((_, i) => i !== index));
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Remover Item',
+            description: 'Remover este item?',
+            variant: 'danger',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await stockService.removeItem(itemId);
+                    if (request) {
+                        await refreshItems(request.id);
+                    } else {
+                        setItems(prev => prev.filter((_, i) => i !== index));
+                    }
+                } catch (err) {
+                    console.error(err);
+                    toast.error("Erro ao remover item");
+                } finally {
+                    setLoading(false);
+                }
             }
-        } catch (err) {
-            console.error(err);
-            alert("Erro ao remover item");
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
     const handleSubmit = async () => {
-        if (!request) return alert("Adicione itens antes de enviar");
-        if (items.length === 0) return alert("Adicione pelo menos um item");
+        if (!request) return void toast.error("Adicione itens antes de enviar");
+        if (items.length === 0) return void toast.error("Adicione pelo menos um item");
+        if (!notes || notes.trim() === '') return void toast.error("Observação obrigatória para enviar.");
 
-        if (!confirm("Confirmar envio da solicitação?")) return;
-
-        setLoading(true);
-        try {
-            await stockService.updateRequestStatus(request.id, 'PENDING');
-            alert("Requisição enviada com sucesso!");
-            onSave();
-            onClose();
-        } catch (err: any) {
-            alert("Erro ao enviar: " + err.message);
-        } finally {
-            setLoading(false);
-        }
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Confirmar Envio',
+            description: 'Confirmar envio da solicitação?',
+            variant: 'info',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await stockService.updateRequestStatus(request.id, 'PENDING');
+                    toast.success("Requisição enviada com sucesso!");
+                    setTimeout(() => {
+                        onSave();
+                        onClose();
+                    }, 0);
+                } catch (err: any) {
+                    toast.error("Erro ao enviar: " + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
     };
 
     const handleReopen = async () => {
         if (!request) return;
-        if (!confirm("Deseja reabrir esta requisição? Ela voltará para o status RASCUNHO, permitindo que você edite os itens novamente.")) return;
-
-        setLoading(true);
-        try {
-            await stockService.updateRequestStatus(request.id, 'DRAFT');
-            // Refresh
-            const updated = await stockService.getRequestById(request.id);
-            setRequest(updated);
-            alert("Requisição reaberta para RASCUNHO!");
-        } catch (err) {
-            alert("Erro ao reabrir");
-        } finally {
-            setLoading(false);
-        }
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Reabrir Requisição',
+            description: 'Deseja reabrir esta requisição? Ela voltará para o status RASCUNHO, permitindo que você edite os itens novamente.',
+            variant: 'warning',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await stockService.updateRequestStatus(request.id, 'DRAFT');
+                    // Refresh
+                    const updated = await stockService.getRequestById(request.id);
+                    setRequest(updated);
+                    toast.success("Requisição reaberta para RASCUNHO!");
+                } catch (err) {
+                    toast.error("Erro ao reabrir");
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
     };
 
     const handleDelete = async () => {
@@ -249,133 +293,145 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
             ? "Deseja EXCLUIR este rascunho permanentemente?"
             : "Tem certeza que deseja excluir esta requisição? Esta ação não pode ser desfeita.";
 
-        if (!confirm(msg)) return;
-
-        setLoading(true);
-        try {
-            await stockService.deleteRequest(request.id);
-            alert("Requisição excluída!");
-            onSave(); // Trigger refresh in parent
-            onClose();
-        } catch (err: any) {
-            alert("Erro ao excluir: " + err.message);
-        } finally {
-            setLoading(false);
-        }
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Excluir Requisição',
+            description: msg,
+            variant: 'danger',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await stockService.deleteRequest(request.id);
+                    toast.success("Requisição excluída!");
+                    setTimeout(() => {
+                        onSave(); // Trigger refresh in parent
+                        onClose();
+                    }, 0);
+                } catch (err: any) {
+                    toast.error("Erro ao excluir: " + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-6xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
-
-                {/* --- HEADER FULL WIDTH --- */}
-                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 shrink-0 bg-white z-20">
-                    <div>
-                        <div className="flex items-center gap-3 mb-1">
-                            <h2 className="text-xl font-bold text-slate-800">
+        <>
+            <Modal 
+                isOpen={isOpen} 
+                onClose={onClose} 
+                size="xl" 
+                className="max-w-6xl h-[85vh] !rounded-2xl"
+                closeOnOverlayClick={false}
+            >
+                {/* --- HEADER (Padrão RequestHeader) --- */}
+                <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
+                    <div className="flex items-center gap-4">
+                        <div className={`p-3.5 rounded-2xl flex items-center justify-center transition-colors ${
+                            !request || request.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
+                            request.status === 'PENDING' ? 'bg-amber-50 text-amber-600' :
+                            request.status === 'SEPARATING' ? 'bg-blue-50 text-blue-600' :
+                            request.status === 'SEPARATED' ? 'bg-purple-50 text-purple-600' :
+                            request.status === 'DELIVERED' ? 'bg-green-50 text-green-600' :
+                            request.status === 'CANCELED' ? 'bg-red-50 text-red-600' :
+                            'bg-slate-100 text-slate-600'
+                        }`}>
+                            <Package size={32} strokeWidth={1.5} />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">
                                 {request?.friendly_id ? `Requisição #${request.friendly_id}` : 'Nova Requisição'}
                             </h2>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${request?.status === 'DRAFT' ? 'bg-slate-100 text-slate-600 border-slate-200' :
-                                request?.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                    request?.status === 'SEPARATING' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                        request?.status === 'SEPARATED' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                            request?.status === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                'bg-slate-100 text-slate-600 border-slate-200'
-                                }`}>
-                                {request ? (
-                                    request.status === 'DRAFT' ? 'Rascunho' :
-                                        request.status === 'PENDING' ? 'Pendente' :
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">STATUS:</span>
+                                <StatusBadge
+                                    status={
+                                        request ? (
+                                            request.status === 'DRAFT' ? 'Rascunho' :
+                                            request.status === 'PENDING' ? 'Pendente' :
                                             request.status === 'SEPARATING' ? 'Em Separação' :
-                                                request.status === 'SEPARATED' ? 'Separado' :
-                                                    request.status === 'DELIVERED' ? 'Entregue' :
-                                                        request.status === 'CANCELED' ? 'Cancelado' :
-                                                            request.status
-                                ) : 'NOVA'}
-                            </span>
+                                            request.status === 'SEPARATED' ? 'Separado' :
+                                            request.status === 'DELIVERED' ? 'Entregue' :
+                                            request.status === 'CANCELED' ? 'Cancelado' :
+                                            request.status
+                                        ) : 'Novo Registro'
+                                    }
+                                    variant={
+                                        !request || request.status === 'DRAFT' ? 'default' :
+                                        request.status === 'PENDING' ? 'warning' :
+                                        request.status === 'SEPARATING' ? 'info' :
+                                        request.status === 'SEPARATED' ? 'purple' :
+                                        request.status === 'DELIVERED' ? 'success' :
+                                        request.status === 'CANCELED' ? 'error' :
+                                        'default'
+                                    }
+                                    size="sm"
+                                />
+                            </div>
                         </div>
-                        <p className="text-sm text-slate-500">Prencha os dados e adicione os itens solicitados</p>
                     </div>
-
-                    <button
-                        onClick={onClose}
-                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
-                    >
-                        <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <IconButton
+                            icon={X}
+                            variant="default"
+                            label="Fechar"
+                            onClick={onClose}
+                            className="hover:text-red-500 hover:bg-red-50 border-none shadow-none"
+                        />
+                    </div>
                 </div>
 
                 {/* --- BODY --- */}
-                <div className="flex flex-1 overflow-hidden">
+                <div className="flex-1 flex overflow-hidden">
 
-                    {/* Sidebar - Context Data */}
-                    <div className="w-[320px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
-                        <div className="p-6 space-y-6">
+                    {/* Sidebar - Padrão RequestSidePanel */}
+                    <div className="w-[340px] shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto">
+                        <div className="p-6 space-y-4">
+                            <FormField label="Data Abertura">
+                                <Input
+                                    type="text"
+                                    value={request?.created_at
+                                        ? formatInSystemTime(request.created_at)
+                                        : formatInSystemTime(new Date().toISOString())}
+                                    disabled
+                                />
+                            </FormField>
 
-                            {/* Context Headline */}
-                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                                <AlertCircle size={12} /> Contexto
-                            </div>
+                            <FormField label="Solicitante">
+                                <Input
+                                    type="text"
+                                    value={request?.usuario?.nome || user?.nome || ''}
+                                    disabled
+                                />
+                            </FormField>
 
-                            <div className="space-y-4">
-                                {/* Data */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                                        <Calendar size={12} /> DATA
-                                    </label>
-                                    <div className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-lg text-sm font-medium text-slate-600 select-none">
-                                        {request?.created_at
-                                            ? new Date(request.created_at).toLocaleDateString('pt-BR')
-                                            : new Date().toLocaleDateString('pt-BR')}
-                                    </div>
-                                </div>
+                            <FormField label="Filial" required>
+                                <Select
+                                    value={selectedFazendaId}
+                                    onChange={e => setSelectedFazendaId(e.target.value)}
+                                    disabled={!!request}
+                                    placeholder="Selecione..."
+                                    options={fazendas.map(f => ({ value: f.id, label: f.nome }))}
+                                />
+                            </FormField>
 
-                                {/* Solicitante */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                                        <User size={12} /> SOLICITANTE
-                                    </label>
-                                    <div className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-lg text-sm font-medium text-slate-600 select-none">
-                                        {request?.usuario?.nome || user?.nome}
-                                    </div>
-                                </div>
-
-                                {/* Filial (DropDown) */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                                        <MapPin size={12} /> FILIAL *
-                                    </label>
-                                    <select
-                                        value={selectedFazendaId}
-                                        onChange={(e) => setSelectedFazendaId(e.target.value)}
-                                        disabled={!!request} // Lock if request exists
-                                        className={`w-full px-4 py-3 border rounded-lg text-sm font-medium outline-none transition-all ${!!request
-                                            ? 'bg-slate-50 border-slate-100 text-slate-500 cursor-not-allowed'
-                                            : 'bg-white border-slate-200 text-slate-700 focus:ring-2 focus:ring-blue-500'
-                                            }`}
-                                    >
-                                        <option value="">Selecione a Filial...</option>
-                                        {fazendas.map(f => (
-                                            <option key={f.id} value={f.id}>{f.nome}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center gap-1">
-                                        <FileText size={12} /> OBSERVAÇÕES
-                                    </label>
-                                    <textarea
-                                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm min-h-[120px] resize-none text-slate-600"
-                                        placeholder={canEdit ? "Observações gerais..." : "Sem observações"}
-                                        value={notes}
-                                        onChange={e => setNotes(e.target.value)}
-                                        readOnly={!canEdit}
-                                    />
-                                </div>
-                            </div>
-
+                            <FormField
+                                label="Observação"
+                                required
+                                error={!notes.trim() && canEdit ? 'Observação obrigatória para adicionar itens' : undefined}
+                            >
+                                <Textarea
+                                    value={notes}
+                                    onChange={e => setNotes(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="Descreva a aplicação ou motivo..."
+                                    error={!notes.trim() && canEdit}
+                                    className="min-h-[100px] uppercase"
+                                />
+                            </FormField>
                         </div>
                     </div>
 
@@ -384,17 +440,19 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
                         {/* Add Item Section */}
                         {canEdit && (
-                            <div className="p-6 bg-white border-b border-slate-100 shadow-sm z-10">
+                            <div className="p-6 bg-slate-50/80 border-b border-slate-200/60 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] z-20">
                                 {/* Category Selection */}
                                 <div className="mb-6">
-                                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Categoria do Pedido</label>
+                                    <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-3">
+                                        CATEGORIA DO PEDIDO
+                                    </div>
                                     <div className="flex gap-3">
                                         {(['GERAL', 'SEGURANCA', 'UNIFORME'] as StockRequestCategory[]).map(cat => (
                                             <button
                                                 key={cat}
                                                 onClick={() => {
                                                     if (items.length > 0) {
-                                                        alert("Você não pode alterar a categoria após adicionar itens. Remova os itens primeiro.");
+                                                        toast.error("Você não pode alterar a categoria após adicionar itens. Remova os itens primeiro.");
                                                         return;
                                                     }
                                                     setCategory(cat);
@@ -418,28 +476,32 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                     {items.length > 0 && <p className="text-[10px] text-slate-400 mt-1.5">* Remova todos os itens para alterar a categoria.</p>}
                                 </div>
 
-                                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase">
-                                    <Plus size={16} className="text-blue-500" /> Adicionar Item
-                                </h3>
+                                <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">
+                                    <Plus size={14} className="text-slate-400" /> ADICIONAR ITEM
+                                </div>
 
-                                <div className="flex gap-4">
+                                <div className="flex gap-4 items-start">
                                     {/* Search */}
-                                    <div className="relative flex-1">
-                                        <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                                        <input
-                                            type="text"
-                                            placeholder="Buscar produto por nome ou código..."
-                                            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                            value={searchQuery}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setSearchQuery(val);
-                                                if (selectedMaterial && val !== selectedMaterial.name) {
-                                                    setSelectedMaterial(null);
-                                                }
-                                            }}
-                                            disabled={!canEdit}
-                                        />
+                                    <div className="flex-[4] relative">
+                                        <FormField label="Produto" hint="Buscar produto por nome ou código">
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
+                                                <Input
+                                                    type="text"
+                                                    placeholder="Digite para buscar..."
+                                                    className="w-full pl-9 bg-white"
+                                                    value={searchQuery}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setSearchQuery(val);
+                                                        if (selectedMaterial && val !== selectedMaterial.name) {
+                                                            setSelectedMaterial(null);
+                                                        }
+                                                    }}
+                                                    disabled={!canEdit}
+                                                />
+                                            </div>
+                                        </FormField>
 
                                         {/* Search Results Dropdown */}
                                         {searchResults.length > 0 && searchQuery && !selectedMaterial && canEdit && (
@@ -460,7 +522,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                         <div>
                                                             <div className="text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{mat.name}</div>
                                                             <div className="text-xs text-slate-500">
-                                                                Cod: {mat.unisystem_code} <span className="mx-1">•</span> Estoque: <span className="font-bold text-slate-700">{mat.current_stock} {mat.unit}</span>
+                                                                Cod: {mat.unisystem_code} <span className="mx-1">•</span> Estoque: <span className="font-bold text-slate-700">{mat.current_stock ?? 0} {mat.unit}</span>
                                                             </div>
                                                         </div>
                                                     </button>
@@ -471,14 +533,14 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
                                     {/* Quantity & Add */}
                                     {selectedMaterial && (
-                                        <div className="flex gap-2 animate-in fade-in slide-in-from-left-4">
-                                            <div className="w-32">
-                                                <div className="relative">
-                                                    <input
+                                        <div className="flex gap-2 animate-in fade-in slide-in-from-left-4 flex-[3]">
+                                            <div className="flex-1">
+                                                <FormField label="Quantidade" hint={selectedMaterial.unit}>
+                                                    <Input
                                                         type="number"
                                                         min="1"
                                                         step="1"
-                                                        className="w-full pl-3 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-center bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        className="text-center"
                                                         value={quantity || ''}
                                                         onChange={e => {
                                                             const val = e.target.value;
@@ -490,16 +552,18 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                             setQuantity(isNaN(parsed) ? 0 : parsed);
                                                         }}
                                                     />
-                                                    <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">{selectedMaterial.unit}</span>
-                                                </div>
+                                                </FormField>
                                             </div>
-                                            <button
-                                                onClick={handleAddItem}
-                                                disabled={loading}
-                                                className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-md shadow-blue-100"
-                                            >
-                                                {loading ? 'Adicionando...' : 'Adicionar'}
-                                            </button>
+                                            <div className="flex-[2] pt-6">
+                                                <Button 
+                                                    onClick={handleAddItem} 
+                                                    disabled={loading}
+                                                    variant="success"
+                                                    fullWidth
+                                                >
+                                                    {loading ? 'Adicionando...' : 'Adicionar Item na Lista'}
+                                                </Button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -507,29 +571,33 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                         )}
 
                         {/* Lists */}
-                        <div className="flex-1 overflow-y-auto p-6">
-                            <h4 className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase mb-4 sticky top-0 bg-slate-50/50 backdrop-blur-sm py-2">
-                                <span>Itens Solicitados</span>
-                                <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{items.length}</span>
-                            </h4>
-
-                            {items.length === 0 ? (
-                                <div className="h-64 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                                    <Package size={48} className="mb-4 opacity-50" />
-                                    <p className="font-medium">Nenhum item adicionado</p>
-                                    <p className="text-sm opacity-70">Utilize a busca acima para adicionar itens</p>
+                        <div className="flex-1 overflow-hidden relative flex flex-col">
+                            <div className="py-1.5 px-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest z-10 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <span>Itens Solicitados</span>
+                                    <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px]">{items.length}</span>
                                 </div>
-                            ) : (
-                                <div className="grid grid-cols-1 gap-3">
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-2 md:p-3 bg-slate-50">
+                                {items.length === 0 ? (
+                                    <div className="py-12">
+                                        <EmptyState
+                                            title="Lista Vazia"
+                                            description="Nenhum item adicionado à solicitação. Utilize a busca acima para adicionar itens."
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-2 max-w-5xl mx-auto">
                                     {items.map((item, idx) => (
                                         <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-slate-100 rounded-xl shadow-sm hover:border-blue-200 hover:shadow-md transition-all group">
 
                                             {/* Image */}
                                             <div
                                                 className="w-16 h-16 rounded-lg bg-slate-50 shrink-0 overflow-hidden cursor-zoom-in border border-slate-100"
-                                                onClick={() => setExpandedImage(item.material.image_url || null)}
+                                                onClick={() => setExpandedImage(item.material?.image_url || null)}
                                             >
-                                                {item.material.image_url ?
+                                                {item.material?.image_url ?
                                                     <img src={item.material.image_url} className="w-full h-full object-cover hover:scale-110 transition-transform" /> :
                                                     <div className="w-full h-full flex items-center justify-center text-slate-300"><Package size={24} /></div>
                                                 }
@@ -537,10 +605,10 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
 
                                             {/* Content */}
                                             <div className="flex-1 min-w-0">
-                                                <h4 className="font-bold text-slate-800 text-base truncate" title={item.material.name}>{item.material.name}</h4>
+                                                <h4 className="font-bold text-slate-800 text-base truncate" title={item.material?.name || 'Material desconhecido'}>{item.material?.name || 'Material desconhecido'}</h4>
                                                 <div className="flex items-center gap-3 mt-1">
                                                     <span className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
-                                                        {item.material.unisystem_code}
+                                                        {item.material?.unisystem_code || '-'}
                                                     </span>
 
                                                     {/* Separation Status Badge (Only Status now, quantity moved to right) */}
@@ -585,7 +653,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                             }}
                                                             onBlur={async () => {
                                                                 if (item.qty <= 0 || isNaN(item.qty) || !Number.isInteger(item.qty)) {
-                                                                    alert("A quantidade deve ser um número inteiro maior que zero");
+                                                                    toast.error("A quantidade deve ser um número inteiro maior que zero");
                                                                     if (request) refreshItems(request.id);
                                                                     return;
                                                                 }
@@ -594,7 +662,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                                         await stockService.updateItemQuantity(item.id, item.qty);
                                                                     } catch (err: any) {
                                                                         console.error(err);
-                                                                        alert("Erro ao atualizar quantidade: " + err.message);
+                                                                        toast.error("Erro ao atualizar quantidade: " + err.message);
                                                                     }
                                                                 }
                                                             }}
@@ -625,7 +693,7 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                     </div>
                                                 )}
 
-                                                <div className="text-xs font-bold text-slate-300 uppercase self-center pt-1">{item.material.unit}</div>
+                                                <div className="text-xs font-bold text-slate-300 uppercase self-center pt-1">{item.material?.unit || 'un'}</div>
                                             </div>
 
                                             {/* Actions */}
@@ -643,45 +711,52 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                 </div>
                             )}
                         </div>
+                    </div>
+                </div>
+                </div>
 
-                        {/* Footer Actions */}
-                        <div className="p-4 border-t border-slate-100 bg-white z-20 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                            <div className="flex gap-3">
-                                {request && (request.status === 'DRAFT' && canEdit) && (
-                                    <button
-                                        onClick={handleDelete}
-                                        className="px-4 py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 transition-colors flex items-center gap-2"
-                                    >
-                                        <Trash2 size={16} />
-                                        Excluir Rascunho
-                                    </button>
-                                )}
+                {/* --- FOOTER (Padrão RequestFooter) --- */}
+                <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between z-10">
+                    <div className="flex gap-3">
+                        <Button variant="secondary" onClick={onClose} disabled={loading}>
+                            Fechar / Cancelar
+                        </Button>
+                        {request && ((request.status === 'DRAFT' && canEdit) || isAdmin) && (
+                            <Button
+                                variant="danger"
+                                onClick={handleDelete}
+                                icon={Trash2}
+                            >
+                                Excluir
+                            </Button>
+                        )}
+                    </div>
 
-                                {/* Reopen */}
-                                {canAccessRow && request && request.status === 'PENDING' && (
-                                    <button
-                                        onClick={handleReopen}
-                                        className="px-5 py-2.5 bg-yellow-100 text-yellow-700 font-bold rounded-lg text-sm hover:bg-yellow-200 transition-colors flex items-center gap-2"
-                                    >
-                                        <AlertTriangle size={16} /> Reabrir para Rascunho
-                                    </button>
-                                )}
-                            </div>
+                    <div className="flex gap-3">
+                        {/* Reopen */}
+                        {canAccessRow && request && request.status === 'PENDING' && (
+                            <Button
+                                variant="secondary"
+                                onClick={handleReopen}
+                                icon={AlertTriangle}
+                                className="bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100"
+                            >
+                                Reabrir para Rascunho
+                            </Button>
+                        )}
 
-                            <div className="flex gap-3">
-                                <button
-                                    type="button"
-                                    onClick={onClose}
-                                    className="px-6 py-2.5 text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-lg font-medium text-sm transition-colors"
-                                >
-                                    Fechar
-                                </button>
-
-                                {/* Email */}
-                                {request?.status === 'SEPARATED' && canManageNotifications && (
-                                    <button
-                                        onClick={async () => {
-                                            if (!confirm('Deseja enviar o e-mail de notificação?')) return;
+                        {/* Email */}
+                        {request?.status === 'SEPARATED' && canManageNotifications && (
+                            <Button
+                                variant="secondary"
+                                icon={Send}
+                                onClick={async () => {
+                                    setConfirmDialog({
+                                        isOpen: true,
+                                        title: 'Enviar Notificação',
+                                        description: 'Deseja enviar o e-mail de notificação?',
+                                        variant: 'info',
+                                        onConfirm: async () => {
                                             setLoading(true);
                                             try {
                                                 await notificationService.sendStockRequestReport(
@@ -690,39 +765,52 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                                                     user?.email,
                                                     user?.nome
                                                 );
-                                                alert('E-mail enviado!');
+                                                toast.success('E-mail enviado!');
                                             } catch (err) {
-                                                alert('Erro ao enviar e-mail.');
+                                                toast.error('Erro ao enviar e-mail.');
                                             } finally {
                                                 setLoading(false);
                                             }
-                                        }}
-                                        disabled={loading}
-                                        className="px-5 py-2.5 bg-blue-100 text-blue-700 font-bold rounded-lg text-sm hover:bg-blue-200 transition-colors flex items-center gap-2 disabled:opacity-50"
-                                    >
-                                        <Send size={16} /> Notificar Email
-                                    </button>
-                                )}
+                                        }
+                                    });
+                                }}
+                                disabled={loading}
+                                className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                            >
+                                Notificar Email
+                            </Button>
+                        )}
 
-                                {/* Main Action */}
-                                {canEdit && (
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={loading || items.length === 0}
-                                        className="px-8 py-2.5 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 shadow-lg shadow-green-200 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:shadow-none"
-                                    >
-                                        {loading ? 'Processando...' : (
-                                            <>
-                                                <Send size={18} /> Enviar Requisição
-                                            </>
-                                        )}
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+                        {/* Main Action */}
+                        
+                        {/* Separar Action */}
+                        {request && canConfirm && (request.status === 'PENDING' || request.status === 'SEPARATING') && onSeparar && (
+                            <Button
+                                variant="primary"
+                                icon={Package}
+                                onClick={() => {
+                                    onClose();
+                                    onSeparar(request);
+                                }}
+                                disabled={loading}
+                            >
+                                Separar
+                            </Button>
+                        )}
+
+                        {request && request.status === 'DRAFT' && canEdit && (
+                            <Button
+                                variant="primary"
+                                onClick={handleSubmit}
+                                icon={Send}
+                                disabled={loading || items.length === 0}
+                            >
+                                Enviar Solicitação
+                            </Button>
+                        )}
                     </div>
                 </div>
-            </div>
+            </Modal>
 
             {/* Image Expansion Modal */}
             {expandedImage && (
@@ -743,6 +831,16 @@ export function StockRequestForm({ isOpen, onClose, onSave, requestId }: StockRe
                     />
                 </div>
             )}
-        </div>
+
+            <ConfirmDialog
+                isOpen={confirmDialog.isOpen}
+                onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                title={confirmDialog.title}
+                description={confirmDialog.description}
+                variant={confirmDialog.variant}
+                onConfirm={confirmDialog.onConfirm}
+                isLoading={loading}
+            />
+        </>
     );
 }

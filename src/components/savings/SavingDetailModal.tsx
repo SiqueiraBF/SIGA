@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { X, Calendar, User, Hash, Building2, DollarSign, Percent, Paperclip, Download, ExternalLink, Trash2, FileText, Edit } from 'lucide-react';
+import { Calendar, User, Building2, DollarSign, Percent, Paperclip, ExternalLink, Trash2, FileText, Edit } from 'lucide-react';
 import { Saving, savingService } from '../../services/savingService';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { Modal } from '../ui/Modal';
+import { ModalHeader } from '../ui/ModalHeader';
+import { ModalFooter } from '../ui/ModalFooter';
+import { Button } from '../ui/Button';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface SavingDetailModalProps {
   saving: Saving | null;
@@ -15,6 +20,13 @@ interface SavingDetailModalProps {
 export function SavingDetailModal({ saving, isOpen, onClose, onDelete, onEdit }: SavingDetailModalProps) {
   const { role } = useAuth();
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    variant?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void | Promise<void>;
+  }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
   if (!isOpen || !saving) return null;
 
@@ -40,195 +52,203 @@ export function SavingDetailModal({ saving, isOpen, onClose, onDelete, onEdit }:
   };
 
   const handleDelete = () => {
-    if (window.confirm('Tem certeza que deseja excluir este registro de saving? Esta ação não pode ser desfeita.')) {
-      if (onDelete) {
-        onDelete(saving.id);
-        onClose();
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Registro',
+      description: 'Tem certeza que deseja excluir este registro de saving? Esta ação não pode ser desfeita.',
+      variant: 'danger',
+      onConfirm: () => {
+        if (onDelete) {
+          onDelete(saving.id);
+          onClose();
+        }
       }
-    }
+    });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-600">
-              <DollarSign size={20} className="stroke-[2.5px]" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-800">Detalhes do Saving</h2>
-              <p className="text-sm text-slate-500 font-medium">Cotação #{saving.n_cotacao}</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
+  const compradorName = saving.usuario?.nome || saving.comprador || 'Não informado';
+  const compradorInitials = compradorName.substring(0, 2).toUpperCase();
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                  <User size={14} /> Informações Gerais
-                </h3>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-4">
-                  <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1">Comprador Responsável</p>
-                    <p className="font-semibold text-slate-800">{saving.comprador}</p>
+  return (
+    <>
+      <Modal isOpen={isOpen} onClose={onClose} size="lg">
+      <ModalHeader
+        title="Detalhes do Saving"
+        subtitle={`Cotação #${saving.n_cotacao}`}
+        icon={DollarSign}
+        onClose={onClose}
+      />
+
+      <div className="p-6 overflow-y-auto max-h-[70vh] custom-scrollbar bg-slate-50/50">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            
+            {/* Bloco 1: Informações Gerais */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                <User size={12} /> Informações Gerais
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Comprador Responsável</label>
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                      {compradorInitials}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 leading-tight">{compradorName}</p>
+                      <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mt-0.5">Comprador</p>
+                    </div>
                   </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1">Data da Negociação</p>
-                    <p className="font-semibold text-slate-800 flex items-center gap-2">
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Data Negociação</label>
+                    <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-slate-600 text-sm font-medium flex items-center gap-2">
                       <Calendar size={14} className="text-slate-400" />
                       {saving.data.split('T')[0].split('-').reverse().join('/')}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1">Data de Criação do Registro</p>
-                    <p className="text-sm text-slate-600">
-                      {new Date(saving.created_at).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                  <Building2 size={14} /> Fornecedor
-                </h3>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-4">
-                  <div>
-                    <p className="text-xs text-slate-500 font-medium mb-1">Razão Social</p>
-                    <p className="font-semibold text-slate-800">{saving.fornecedor?.razao_social || 'N/A'}</p>
-                  </div>
-                  {saving.fornecedor?.cnpj && (
-                    <div>
-                      <p className="text-xs text-slate-500 font-medium mb-1">CNPJ</p>
-                      <p className="font-medium text-slate-600">{saving.fornecedor.cnpj}</p>
                     </div>
-                  )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Criado em</label>
+                    <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-slate-600 text-sm font-medium">
+                      {new Date(saving.created_at).toLocaleString('pt-BR').substring(0, 10)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                  <DollarSign size={14} /> Valores da Negociação
-                </h3>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-4">
-                  <div className="flex justify-between items-center pb-3 border-b border-slate-200 border-dashed">
-                    <p className="text-sm text-slate-500 font-medium">Valor Inicial (Sem choro)</p>
-                    <p className="font-semibold text-slate-600">
-                      {saving.valor_inicial.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </p>
+            {/* Bloco 2: Fornecedor */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                <Building2 size={12} /> Fornecedor
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Razão Social</label>
+                  <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-slate-800 text-sm font-bold">
+                    {saving.fornecedor?.razao_social || 'N/A'}
                   </div>
-                  <div className="flex justify-between items-center pb-3 border-b border-slate-200 border-dashed">
-                    <p className="text-sm text-slate-500 font-medium">Valor Final Fechado</p>
-                    <p className="font-bold text-slate-800">
-                      {saving.valor_final.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </p>
-                  </div>
-                  <div className="flex justify-between items-center pt-2">
-                    <p className="text-sm font-bold text-teal-700">Total Economizado (Saving)</p>
-                    <p className="text-xl font-black text-teal-600">
-                      {saving.saving.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </p>
-                  </div>
-                  <div className="flex justify-between items-center mt-2 bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                    <p className="text-sm font-bold text-emerald-700 flex items-center gap-1">
-                      <Percent size={14} /> Percentual de Desconto
-                    </p>
-                    <div className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-md font-bold">
-                      {saving.desconto_percentual.toFixed(2)}%
+                </div>
+                {saving.fornecedor?.cnpj && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">CNPJ</label>
+                    <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-slate-600 text-sm font-medium font-mono">
+                      {saving.fornecedor.cnpj}
                     </div>
                   </div>
-                </div>
+                )}
               </div>
-
-              {saving.anexos && saving.anexos.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                    <Paperclip size={14} /> Anexos ({saving.anexos.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {saving.anexos.map((anexo, idx) => (
-                      <div 
-                        key={idx}
-                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="p-2 bg-white rounded-lg shadow-sm border border-slate-100">
-                            <FileText size={16} className="text-teal-600" />
-                          </div>
-                          <span className="text-sm font-medium text-slate-700 truncate" title={anexo.name}>
-                            {anexo.name}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleDownloadAttachment(anexo.path, anexo.name)}
-                          disabled={downloading === anexo.path}
-                          className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors flex-shrink-0"
-                          title="Visualizar anexo"
-                        >
-                          {downloading === anexo.path ? (
-                            <div className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <ExternalLink size={18} />
-                          )}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-          <div className="flex gap-2">
-            {canEdit && (
-              <>
-                <button
-                  onClick={() => {
-                    if (onEdit) {
-                      onEdit(saving);
-                      onClose();
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 text-teal-600 bg-teal-50 hover:bg-teal-100 rounded-lg font-medium transition-colors border border-teal-100"
-                >
-                  <Edit size={16} />
-                  Editar Registro
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="flex items-center gap-2 px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg font-medium transition-colors border border-red-100"
-                >
-                  <Trash2 size={16} />
-                  Excluir Registro
-                </button>
-              </>
+          <div className="space-y-6">
+            
+            {/* Bloco 3: Valores da Negociação */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                <DollarSign size={12} /> Valores da Negociação
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-100 border-dashed">
+                  <span className="text-xs font-bold text-slate-500">Valor Inicial</span>
+                  <span className="text-sm font-bold text-slate-600">
+                    {saving.valor_inicial.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pb-3 border-b border-slate-100 border-dashed">
+                  <span className="text-xs font-bold text-slate-500">Valor Final Fechado</span>
+                  <span className="text-sm font-black text-slate-800">
+                    {saving.valor_final.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2">
+                  <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Total Economizado</span>
+                  <span className="text-lg font-black text-blue-600">
+                    {saving.saving.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-2 bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Percent size={12} /> Desconto Aplicado
+                  </span>
+                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-sm font-black">
+                    {saving.desconto_percentual.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bloco 4: Anexos */}
+            {saving.anexos && saving.anexos.length > 0 && (
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                  <Paperclip size={12} /> Anexos da Negociação ({saving.anexos.length})
+                </div>
+                
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  {saving.anexos.map((anexo, idx) => (
+                    <button 
+                      key={idx}
+                      type="button"
+                      onClick={() => handleDownloadAttachment(anexo.path, anexo.name)}
+                      disabled={downloading === anexo.path}
+                      className="w-full flex items-center gap-3 p-3 border rounded-xl transition-all group active:scale-95 shadow-sm bg-blue-50 border-blue-100 text-blue-700 hover:bg-blue-100 text-left"
+                    >
+                      <div className="p-2 rounded-lg group-hover:scale-110 transition-transform bg-white text-blue-600 flex items-center justify-center shrink-0">
+                        {downloading === anexo.path ? (
+                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <FileText size={16} />
+                        )}
+                      </div>
+                      <span className="text-xs font-bold truncate flex-1" title={anexo.name}>
+                        {anexo.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors"
-          >
-            Fechar
-          </button>
         </div>
       </div>
-    </div>
+
+      <ModalFooter
+        eliteStyle
+        startActions={
+          <Button variant="secondary" onClick={onClose}>
+            Fechar
+          </Button>
+        }
+        endActions={
+          canEdit && (
+            <>
+              <Button variant="secondary" icon={Edit} onClick={() => { if (onEdit) { onEdit(saving); onClose(); } }}>
+                Editar Registro
+              </Button>
+              <Button variant="danger" icon={Trash2} onClick={handleDelete}>
+                Excluir Registro
+              </Button>
+            </>
+          )
+        }
+      />
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+      />
+    </>
   );
 }

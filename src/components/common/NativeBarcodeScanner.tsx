@@ -10,9 +10,10 @@ declare global {
 interface NativeBarcodeScannerProps {
     onScan: (barcode: string) => void;
     onClose: () => void;
+    expectedLength?: number;
 }
 
-export function NativeBarcodeScanner({ onScan, onClose }: NativeBarcodeScannerProps) {
+export function NativeBarcodeScanner({ onScan, onClose, expectedLength }: NativeBarcodeScannerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [error, setError] = useState('');
     const [isDetecting, setIsDetecting] = useState(false);
@@ -71,6 +72,16 @@ export function NativeBarcodeScanner({ onScan, onClose }: NativeBarcodeScannerPr
                 if (barcodes.length > 0) {
                     const result = barcodes[0].rawValue;
                     
+                    // Validação de segurança para códigos específicos (ex: NFe = 44 dígitos)
+                    if (expectedLength) {
+                        const numbersOnly = result.replace(/\D/g, '');
+                        if (numbersOnly.length !== expectedLength) {
+                            // Ignora a leitura (provavelmente cortada ou borrada) e tenta o próximo frame
+                            animationFrameId = requestAnimationFrame(scanLoop);
+                            return;
+                        }
+                    }
+
                     // Vibra o celular no sucesso
                     if (navigator.vibrate) navigator.vibrate(100);
                     

@@ -12,11 +12,12 @@ import { ModalFooter } from './ui/ModalFooter';
 interface FuelingDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm?: (nuntecId?: string) => void;
-  data?: Abastecimento;
+  data: Abastecimento;
+  onConfirm: (item: Abastecimento, nuntecId?: string) => void | Promise<void>;
+  canConfirm: boolean;
 }
 
-export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: FuelingDetailsModalProps) {
+export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data, canConfirm }: FuelingDetailsModalProps) {
   const [isConfirming, setIsConfirming] = React.useState(false);
 
   if (!isOpen || !data) return null;
@@ -43,6 +44,43 @@ export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: Fuelin
           }
           onClose={onClose}
         />
+
+        {/* Origem (Manual vs Gerente) Card */}
+        <div className="px-6 pt-6 -mb-2">
+          {data.nuntec_transfer_id ? (
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg text-blue-700">
+                  <Activity size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">
+                    Origem: Gerente
+                  </p>
+                  <p className="text-sm text-blue-700 mt-0.5">
+                    Esta baixa está vinculada a uma transferência (Transf).
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-200 rounded-lg text-slate-700">
+                  <User size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Origem: Lançamento Manual
+                  </p>
+                  <p className="text-sm text-slate-600 mt-0.5">
+                    Esta baixa foi registrada manualmente no sistema.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Compliance Alerts */}
         {(data.is_manager_mode || data.tipo_marcador === 'SEM_MEDIDOR') && (
@@ -130,7 +168,7 @@ export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: Fuelin
                     (Fuel ID: {data.nuntec_fuel_id})
                   </p>
                 )}
-                {!data.nuntec_fuel_id && data.nuntec_transfer_id && onConfirm && (
+                {!data.nuntec_fuel_id && data.nuntec_transfer_id && canConfirm && (
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -229,9 +267,9 @@ export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: Fuelin
 
         {/* Footer */}
         <ModalFooter
-          className={data.status === 'PENDENTE' && onConfirm ? 'flex-col !items-stretch gap-2' : ''}
+          className={data.status === 'PENDENTE' && canConfirm ? 'flex-col !items-stretch gap-2' : ''}
         >
-          {data.status === 'PENDENTE' && onConfirm ? (
+          {data.status === 'PENDENTE' && canConfirm ? (
             <div className="w-full space-y-3">
               <button
                 onClick={async () => {
@@ -244,11 +282,11 @@ export function FuelingDetailsModal({ isOpen, onClose, onConfirm, data }: Fuelin
                     setIsConfirming(true);
                     try {
                       console.log('[DEBUG] Starting createFueling...');
-                      const newId = await nuntecService.createFueling(data);
-                      console.log('[DEBUG] createFueling success:', newId);
+                      const nuntecId = await nuntecService.createFueling(data);
+                      console.log('[DEBUG] createFueling success:', nuntecId);
 
-                      alert(`✅ Sucesso! Baixa enviada para Nuntec.\nID Gerado: ${newId}`);
-                      if (onConfirm) onConfirm(newId);
+                      alert(`✅ Sucesso! Baixa enviada para Nuntec.\nID Gerado: ${nuntecId}`);
+                      await onConfirm(data, nuntecId);
                       onClose();
                     } catch (error: any) {
                       console.error('[DEBUG] createFueling error:', error);

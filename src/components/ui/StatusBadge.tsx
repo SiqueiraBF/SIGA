@@ -9,18 +9,28 @@ interface StatusBadgeProps {
 }
 
 const variants = {
-  default: 'bg-slate-100 text-slate-600 border-slate-200',
-  success: 'bg-green-50 text-green-700 border-green-200',
-  warning: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-  error: 'bg-red-50 text-red-700 border-red-200',
-  info: 'bg-blue-50 text-blue-700 border-blue-200',
-  purple: 'bg-purple-50 text-purple-700 border-purple-200',
-  orange: 'bg-orange-50 text-orange-700 border-orange-200',
+  default: 'bg-slate-100 text-slate-700 border-transparent',
+  success: 'bg-green-100 text-green-800 border-transparent',
+  warning: 'bg-amber-100 text-amber-800 border-transparent',
+  error: 'bg-red-100 text-red-800 border-transparent',
+  info: 'bg-blue-100 text-blue-800 border-transparent',
+  purple: 'bg-purple-100 text-purple-800 border-transparent',
+  orange: 'bg-orange-100 text-orange-800 border-transparent',
+};
+
+const dotColors = {
+  default: 'bg-slate-400',
+  success: 'bg-green-500',
+  warning: 'bg-amber-500',
+  error: 'bg-red-500',
+  info: 'bg-blue-500',
+  purple: 'bg-purple-500',
+  orange: 'bg-orange-500',
 };
 
 const sizes = {
-  sm: 'px-2 py-0.5 text-[10px]',
-  md: 'px-3 py-1 text-xs',
+  sm: 'px-2 py-0.5 text-[10.5px]',
+  md: 'px-3 py-1.5 text-xs',
 };
 
 export function StatusBadge({
@@ -34,8 +44,9 @@ export function StatusBadge({
     <span
       className={`inline-flex items-center gap-1.5 rounded-full font-bold border ${variants[variant]} ${sizes[size]} ${className}`}
     >
+      {!Icon && <span className={`w-1.5 h-1.5 rounded-full ${dotColors[variant]}`} />}
       {Icon && <Icon size={size === 'sm' ? 10 : 12} />}
-      <span className="uppercase tracking-wide">{status}</span>
+      <span className="capitalize tracking-tight">{status.toLowerCase()}</span>
     </span>
   );
 }

@@ -12,7 +12,7 @@ import { ModalFooter } from './ui/ModalFooter';
 interface FuelingResolutionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onResolve: () => void;
+  onResolve: () => void | Promise<void>;
   transfer: NuntecTransfer;
   fazendas: Fazenda[];
   postos: Posto[];
@@ -171,7 +171,7 @@ export function FuelingResolutionModal({
         manager_mode_description: isManagerMode && managerModeReason === 'OUTROS' ? managerModeDescription : null,
       };
       await fuelService.createAbastecimento(payload as any, user!.id);
-      onResolve();
+      await onResolve();
       onClose();
     } catch (error: any) {
       console.error('Erro ao resolver pendência:', error);
@@ -549,10 +549,11 @@ export function FuelingResolutionModal({
                     />
                     <input
                       type="text"
+                      readOnly
                       required
                       value={operador}
                       onChange={(e) => setOperador(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                      className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 cursor-not-allowed focus:outline-none"
                     />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
@@ -571,18 +572,25 @@ export function FuelingResolutionModal({
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={loading || !postoId}
-              className="px-6 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold transition-colors shadow-lg shadow-green-500/30 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <div className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></div>
-              ) : (
-                <Save size={20} />
+            <div className="flex items-center gap-3">
+              {(veiculoPossuiCadastro === null || (veiculoPossuiCadastro === true && !veiculoId) || (veiculoPossuiCadastro === false && !veiculoNome.trim())) && (
+                <span className="text-xs text-red-500 font-medium">
+                  Selecione ou informe um veículo
+                </span>
               )}
-              Confirmar Baixa
-            </button>
+              <button
+                type="submit"
+                disabled={loading || !postoId || veiculoPossuiCadastro === null || (veiculoPossuiCadastro === true && !veiculoId) || (veiculoPossuiCadastro === false && !veiculoNome.trim())}
+                className="px-6 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold transition-colors shadow-lg shadow-green-500/30 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <div className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></div>
+                ) : (
+                  <Save size={20} />
+                )}
+                Confirmar Baixa
+              </button>
+            </div>
           </ModalFooter>
         </form >
       </div >

@@ -14,7 +14,7 @@ interface SavingDashboardProps {
 
 type PeriodFilter = '30D' | 'MONTH' | 'YEAR' | 'ALL';
 
-const COLORS = ['#10b981', '#3b82f6', '#a855f7', '#f59e0b', '#ec4899'];
+const COLORS = ['#2563eb', '#3b82f6', '#a855f7', '#f59e0b', '#ec4899'];
 
 export function SavingDashboard({ savings }: SavingDashboardProps) {
   const [period, setPeriod] = useState<PeriodFilter>('ALL');
@@ -158,25 +158,25 @@ export function SavingDashboard({ savings }: SavingDashboardProps) {
         <div className="flex gap-1">
           <button
             onClick={() => setPeriod('30D')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === '30D' ? 'bg-teal-100 text-teal-700' : 'text-slate-600 hover:bg-slate-100'}`}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === '30D' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             Últimos 30 Dias
           </button>
           <button
             onClick={() => setPeriod('MONTH')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'MONTH' ? 'bg-teal-100 text-teal-700' : 'text-slate-600 hover:bg-slate-100'}`}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'MONTH' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             Este Mês
           </button>
           <button
             onClick={() => setPeriod('YEAR')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'YEAR' ? 'bg-teal-100 text-teal-700' : 'text-slate-600 hover:bg-slate-100'}`}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'YEAR' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             Este Ano
           </button>
           <button
             onClick={() => setPeriod('ALL')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'ALL' ? 'bg-teal-100 text-teal-700' : 'text-slate-600 hover:bg-slate-100'}`}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${period === 'ALL' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             Todo o Período
           </button>
@@ -187,9 +187,9 @@ export function SavingDashboard({ savings }: SavingDashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         {/* KPI 1: Saving Total */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm relative overflow-hidden group">
-          <div className="absolute -right-6 -top-6 w-24 h-24 bg-teal-50 rounded-full transition-transform group-hover:scale-125 opacity-50" />
+          <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-50 rounded-full transition-transform group-hover:scale-125 opacity-50" />
           <div className="relative">
-            <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center mb-3 text-teal-600">
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center mb-3 text-blue-600">
               <DollarSign size={20} />
             </div>
             <p className="text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Saving Total</p>
@@ -263,26 +263,26 @@ export function SavingDashboard({ savings }: SavingDashboardProps) {
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <TrendingUp className="text-teal-600" size={20} />
+              <TrendingUp className="text-blue-600" size={20} />
               <h3 className="text-lg font-bold text-slate-800">Evolução do Saving</h3>
             </div>
             
             <div className="flex bg-slate-100 p-1 rounded-xl">
                   <button
                     onClick={() => setEvolutionView('TOTAL')}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'TOTAL' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'TOTAL' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     Geral
                   </button>
                   <button
                     onClick={() => setEvolutionView('BUYER')}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'BUYER' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'BUYER' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     Comprador
                   </button>
                   <button
                     onClick={() => setEvolutionView('YEAR')}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'YEAR' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${evolutionView === 'YEAR' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     Anual
                   </button>
@@ -295,8 +295,8 @@ export function SavingDashboard({ savings }: SavingDashboardProps) {
                 <AreaChart data={evolutionData.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSaving" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -340,7 +340,7 @@ export function SavingDashboard({ savings }: SavingDashboardProps) {
                       name="totalSaving"
                       type="monotone" 
                       dataKey="totalSaving" 
-                      stroke="#10b981" 
+                      stroke="#2563eb" 
                       strokeWidth={4} 
                       fillOpacity={1} 
                       fill="url(#colorSaving)" 

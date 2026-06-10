@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { db } from '../../services/supabaseService';
 import { notificationService } from '../../services/notificationService';
 import { Solicitacao, Fazenda, Usuario } from '../../types';
+import toast from 'react-hot-toast';
 
 interface UseRequestFormProps {
     isOpen: boolean;
@@ -41,6 +42,23 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
     const [editingItem, setEditingItem] = useState<any | null>(null);
     const [analystSelectedItem, setAnalystSelectedItem] = useState<any | null>(null);
     const [attachments, setAttachments] = useState<any[]>([]);
+
+    // Confirm Dialog State
+    const [confirmDialog, setConfirmDialog] = useState<{
+        isOpen: boolean;
+        title: string;
+        description?: string;
+        variant: 'danger' | 'warning' | 'info';
+        confirmLabel: string;
+        onConfirm: () => void | Promise<void>;
+    }>({
+        isOpen: false,
+        title: '',
+        description: '',
+        variant: 'danger',
+        confirmLabel: 'Confirmar',
+        onConfirm: () => {},
+    });
 
     const isSubmittingRef = useRef(false);
 
@@ -131,7 +149,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         } catch (err) {
             console.error(err);
             const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
-            alert(`Erro ao carregar dados: ${errorMessage}`);
+            toast.error(`Erro ao carregar dados: ${errorMessage}`);
             onClose();
         } finally {
             setLoading(false);
@@ -203,67 +221,85 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             if (!reqId) throw new Error("ID da solicitação inválido");
 
             if (action === 'SEND') {
-                if (items.length === 0) { alert("Adicione itens antes de enviar."); setLoading(false); return; }
+                if (items.length === 0) { toast.error("Adicione itens antes de enviar."); setLoading(false); return; }
                 await db.updateRequest(reqId, { status: 'Aguardando', data_envio: new Date().toISOString() }, user!.id);
-                alert('Solicitação enviada com sucesso!');
+                toast.success('Solicitação enviada com sucesso!');
                 setContextData(prev => ({ ...prev, status: 'Aguardando' }));
                 onSave();
             }
             else if (action === 'START_CADASTRO') {
                 await db.updateRequest(reqId, { status: 'Em Cadastro' }, user!.id);
                 setContextData(prev => ({ ...prev, status: 'Em Cadastro' }));
-                alert('Cadastro iniciado!');
+                toast.success('Cadastro iniciado!');
             }
             else if (action === 'FINISH_CADASTRO') {
                 const hasPending = items.some(i => i.status === 'Pendente');
-                if (hasPending) { alert('Existem itens pendentes de análise.'); setLoading(false); return; }
+                if (hasPending) { toast.error('Existem itens pendentes de análise.'); setLoading(false); return; }
                 await db.updateRequest(reqId, { status: 'Finalizado' }, user!.id);
-                alert('Finalizado com sucesso!');
+                toast.success('Finalizado com sucesso!');
                 setContextData(prev => ({ ...prev, status: 'Finalizado' }));
                 onSave();
             }
             else if (action === 'RETURN') {
                 await db.updateRequest(reqId, { status: 'Devolvido' }, user!.id);
-                alert('Solicitação devolvida ao solicitante.');
+                toast.success('Solicitação devolvida ao solicitante.');
                 setContextData(prev => ({ ...prev, status: 'Devolvido' }));
                 onSave();
             }
             else if (action === 'RESEND') {
                 const hasRejections = items.some(i => i.status === 'Reprovado' || i.status === 'Devolvido');
                 if (hasRejections) {
-                    alert('Você ainda possui itens reprovados. Corrija-os ou exclua-os antes de reenviar.');
+                    toast.error('Você ainda possui itens reprovados. Corrija-os ou exclua-os antes de reenviar.');
                     setLoading(false);
                     return;
                 }
                 await db.updateRequest(reqId, { status: 'Aguardando', data_envio: new Date().toISOString() }, user!.id);
-                alert('Correção enviada para análise!');
+                toast.success('Correção enviada para análise!');
                 setContextData(prev => ({ ...prev, status: 'Aguardando' }));
                 onSave();
             }
             else if (action === 'REOPEN') {
                 await db.updateRequest(reqId, { status: 'Aberto' }, user!.id);
-                alert('Solicitação reaberta para edição (Rascunho).');
+                toast.success('Solicitação reaberta para edição (Rascunho).');
                 setContextData(prev => ({ ...prev, status: 'Aberto' }));
                 onSave();
             }
             else if (action === 'DELETE') {
-                if (confirm("Excluir solicitação permanentemente?")) {
-                    await db.deleteRequest(reqId);
-                    onSave(); onClose();
-                }
+                setLoading(false);
+                isSubmittingRef.current = false;
+                setConfirmDialog({
+                    isOpen: true,
+                    title: 'Excluir Solicitação',
+                    description: 'Esta ação é irreversível. Todos os itens e anexos desta solicitação serão removidos permanentemente.',
+                    variant: 'danger',
+                    confirmLabel: 'Excluir Permanentemente',
+                    onConfirm: async () => {
+                        setLoading(true);
+                        try {
+                            await db.deleteRequest(reqId!);
+                            toast.success('Solicitação excluída.');
+                            onSave(); onClose();
+                        } catch (err: any) {
+                            toast.error(`Erro ao excluir: ${err.message}`);
+                        } finally {
+                            setLoading(false);
+                        }
+                    },
+                });
+                return;
             }
             else { // SAVE
                 if (isNew) {
-                    alert('Rascunho criado!');
+                    toast.success('Rascunho criado!');
                     onSave(); onClose();
                 } else {
-                    alert('Dados salvos!');
+                    toast.success('Dados salvos!');
                 }
             }
 
         } catch (err: any) {
             console.error(err);
-            alert(`Erro: ${err.message}`);
+            toast.error(`Erro: ${err.message}`);
         } finally {
             setLoading(false);
             isSubmittingRef.current = false;
@@ -275,7 +311,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
 
         // Validate Observacao
         if (!contextData.observacao || !contextData.observacao.trim()) {
-            alert('O campo Observação é obrigatório para adicionar itens à solicitação.');
+            toast.error('O campo Observação é obrigatório para adicionar itens à solicitação.');
             return;
         }
 
@@ -309,20 +345,85 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
 
             if (editingItem) {
                 await db.updateItem(editingItem.id, payload, user!.id);
-                setItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...payload, status: 'Pendente' } : i));
+                setItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...payload, status: 'Pendente', analise_pdm_status: 'Pendente' } : i));
                 setEditingItem(null);
+                triggerPdmAnalysis(editingItem.id, { ...editingItem, ...payload });
             } else {
                 const newItem = await db.addItemToRequest(reqId!, payload, user!.id);
                 // Prepend to list (Newest First)
-                setItems(prev => [{ ...newItem, status: 'Pendente' }, ...prev]);
+                setItems(prev => [{ ...newItem, status: 'Pendente', analise_pdm_status: 'Pendente' }, ...prev]);
+                triggerPdmAnalysis(newItem.id, { ...newItem, ...payload });
             }
         } catch (err: any) {
             console.error(err);
-            alert("Erro ao salvar item: " + err.message);
+            toast.error("Erro ao salvar item: " + err.message);
         } finally {
             setLoading(false);
             isSubmittingRef.current = false;
         }
+    };
+
+    const triggerPdmAnalysis = async (itemId: string, itemData: any) => {
+        try {
+            const result = await db.analyzePdmItem(itemData);
+            if (result && result.result) {
+                setItems(prev => prev.map(i => 
+                    i.id === itemId 
+                        ? { 
+                            ...i, 
+                            analise_pdm_status: result.result.status, 
+                            analise_pdm_msg: result.result.message,
+                            analise_pdm_padronizado: result.result.descricao_padronizada
+                          } 
+                        : i
+                ));
+            }
+        } catch (err: any) {
+            console.error("Erro na análise PDM da IA:", err);
+            const errorMsg = `Erro na IA: ${err.message}`;
+            setItems(prev => prev.map(i => 
+                i.id === itemId 
+                    ? { ...i, analise_pdm_status: 'FALTANDO_INFO', analise_pdm_msg: errorMsg } 
+                    : i
+            ));
+            
+            // Persistir o erro no banco para que não suma ao recarregar a tela
+            try {
+                await db.updateItem(itemId, {
+                    analise_pdm_status: 'FALTANDO_INFO',
+                    analise_pdm_msg: errorMsg
+                }, user!.id);
+            } catch (dbErr) {
+                console.error("Erro ao persistir status de falha da IA:", dbErr);
+            }
+        }
+    };
+
+    const handleReprocessAI = async (item: any) => {
+        if (loading || isSubmittingRef.current) return;
+        
+        // 1. Set to pending in local state
+        setItems(prev => prev.map(i => i.id === item.id ? { 
+            ...i, 
+            analise_pdm_status: 'Pendente', 
+            analise_pdm_msg: undefined, 
+            analise_pdm_padronizado: undefined 
+        } : i));
+        
+        // 2. Clear status in DB so it persists reload
+        try {
+            await db.updateItem(item.id, { 
+                analise_pdm_status: 'Pendente', 
+                analise_pdm_msg: undefined, 
+                analise_pdm_padronizado: undefined 
+            }, user!.id);
+        } catch (err) {
+            console.error("Erro ao resetar status no BD", err);
+        }
+
+        // 3. Trigger analysis again
+        triggerPdmAnalysis(item.id, item);
+        toast.success("Reprocessamento IA iniciado!");
     };
 
     const analyzeItem = async (itemId: string, data: any) => {
@@ -333,7 +434,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...data, status: data.status_item } : i));
             setAnalystSelectedItem(null); // Clear selection
         } catch (err: any) {
-            alert(err.message);
+            toast.error(err.message);
         } finally {
             setLoading(false);
         }
@@ -346,7 +447,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         const userPhone = fullRequest.usuario?.telefone;
 
         if (!userPhone) {
-            alert("Usuário solicitante não possui telefone cadastrado.");
+            toast.error("Usuário solicitante não possui telefone cadastrado.");
             return;
         }
 
@@ -365,25 +466,35 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         }
     };
 
-    const handleDeleteItem = async (item: any) => {
-        if (!confirm('Remover este item?')) return;
-        try {
-            await db.deleteItem(item.id, user!.id);
-            setItems(prev => prev.filter(i => i.id !== item.id));
-        } catch (err) {
-            console.error(err);
-        }
+    const handleDeleteItem = (item: any) => {
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Remover Item',
+            description: `Deseja remover o item "${item.descricao || 'sem descrição'}" da solicitação?`,
+            variant: 'danger',
+            confirmLabel: 'Remover',
+            onConfirm: async () => {
+                try {
+                    await db.deleteItem(item.id, user!.id);
+                    setItems(prev => prev.filter(i => i.id !== item.id));
+                    toast.success('Item removido.');
+                } catch (err) {
+                    console.error(err);
+                    toast.error('Erro ao remover item.');
+                }
+            },
+        });
     };
 
     const handleUploadAttachment = async (file: File) => {
         if (!canEditAttachments) {
-            alert('Anexos só podem ser incluídos em solicitações com status Rascunho ou Devolvido.');
+            toast.error('Anexos só podem ser incluídos em solicitações com status Rascunho ou Devolvido.');
             return;
         }
         
         if (!currentRequestId) {
             if (!contextData.observacao || !contextData.observacao.trim()) {
-                alert('Preencha a Observação antes de adicionar anexos.');
+                toast.error('Preencha a Observação antes de adicionar anexos.');
                 return;
             }
 
@@ -401,7 +512,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
                 const newAttachment = await db.uploadAttachment(newReq.id, file, user!.id);
                 setAttachments(prev => [newAttachment, ...prev]);
             } catch (err: any) {
-                alert('Erro ao criar rascunho para anexo: ' + err.message);
+                toast.error('Erro ao criar rascunho para anexo: ' + err.message);
             } finally {
                 setLoading(false);
             }
@@ -413,27 +524,36 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
             const newAttachment = await db.uploadAttachment(currentRequestId, file, user!.id);
             setAttachments(prev => [newAttachment, ...prev]);
         } catch (err: any) {
-            alert('Erro no upload: ' + err.message);
+            toast.error('Erro no upload: ' + err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDeleteAttachment = async (attachment: any) => {
+    const handleDeleteAttachment = (attachment: any) => {
         if (!canEditAttachments) {
-            alert('Anexos só podem ser removidos em solicitações com status Rascunho ou Devolvido.');
+            toast.error('Anexos só podem ser removidos em solicitações com status Rascunho ou Devolvido.');
             return;
         }
-        if (!confirm('Remover este anexo?')) return;
-        setLoading(true);
-        try {
-            await db.deleteAttachment(attachment.id, attachment.file_path);
-            setAttachments(prev => prev.filter(a => a.id !== attachment.id));
-        } catch (err: any) {
-            alert('Erro ao excluir: ' + err.message);
-        } finally {
-            setLoading(false);
-        }
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Remover Anexo',
+            description: 'Deseja remover este anexo permanentemente?',
+            variant: 'danger',
+            confirmLabel: 'Remover',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await db.deleteAttachment(attachment.id, attachment.file_path);
+                    setAttachments(prev => prev.filter(a => a.id !== attachment.id));
+                    toast.success('Anexo removido.');
+                } catch (err: any) {
+                    toast.error('Erro ao excluir: ' + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            },
+        });
     };
 
     return {
@@ -448,6 +568,8 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         attachments, setAttachments,
         currentRequestId,
         isSubmittingRef,
+        confirmDialog,
+        setConfirmDialog,
 
         // Computed Permissions
         isNew,
@@ -467,6 +589,7 @@ export function useRequestForm({ isOpen, onClose, onSave, requestId, initialData
         handleDeleteItem,
         saveItem,
         analyzeItem,
+        handleReprocessAI,
         handleUploadAttachment,
         handleDeleteAttachment,
         user // Exposed for item creation logic

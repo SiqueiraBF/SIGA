@@ -53,9 +53,13 @@ export function SupplierManager() {
 
     const filteredSuppliers = suppliers.filter(s => {
         const search = searchTerm.toLowerCase();
+        const searchNumbers = searchTerm.replace(/\D/g, '');
+        const cnpjNumbers = s.cnpj.replace(/\D/g, '');
+
         return (
             s.razao_social.toLowerCase().includes(search) ||
             s.cnpj.includes(search) ||
+            (searchNumbers && cnpjNumbers.includes(searchNumbers)) ||
             (s.nome_fantasia && s.nome_fantasia.toLowerCase().includes(search))
         );
     });

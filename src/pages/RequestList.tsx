@@ -5,6 +5,7 @@ import { db } from '../services/supabaseService';
 import { supabase } from '../lib/supabase';
 import { RequestFormModal } from '../components/RequestFormModal';
 import { RegistrarDashboard } from './RegistrarDashboard';
+import { PdmManual } from '../components/RequestForm/PdmManual/index';
 import type { Solicitacao, Fazenda, Usuario } from '../types';
 import {
   Plus,
@@ -14,27 +15,26 @@ import {
   Package,
   RotateCcw,
   CheckCircle2,
-  Calendar,
   Building2,
-  User,
-  AlertTriangle,
-  CheckCircle,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown
+  BookOpen,
+  BarChart3
 } from 'lucide-react';
 import { format, parseISO, startOfDay, endOfDay, isBefore, isAfter } from 'date-fns';
 import { formatInSystemTime } from '../utils/dateUtils';
 
-// UI Kit
 import { PageHeader } from '../components/ui/PageHeader';
 import StatsCard from '../components/ui/StatsCard';
 import { TableSkeleton } from '../components/ui/TableSkeleton';
 import { StatsSkeleton } from '../components/ui/StatsSkeleton';
 import { FilterBar } from '../components/ui/FilterBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
-import { EmptyState } from '../components/ui/EmptyState';
-import { TableActions } from '../components/ui/TableActions';
+import { TableCells } from '../components/ui/TableCells';
+import { Button } from '../components/ui/Button';
+import { TabBar } from '../components/ui/TabBar';
+import { FormField } from '../components/ui/FormField';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
 
 type SortField =
   | 'numero'
@@ -50,7 +50,7 @@ type SortDirection = 'asc' | 'desc';
 export function RequestList() {
   const { user, checkAccess, role } = useAuth();
   const queryClient = useQueryClient();
-  const [viewType, setViewType] = useState<'DASHBOARD' | 'LIST'>('LIST');
+  const [viewType, setViewType] = useState<'DASHBOARD' | 'LIST' | 'REGRAS_PDM'>('LIST');
 
   // React Query: Fetch All Data (Optimized)
   const { data, isLoading } = useQuery({
@@ -77,7 +77,6 @@ export function RequestList() {
   const requests = data?.requests || [];
   const fazendas = data?.fazendas || [];
   const usuarios = data?.usuarios || [];
-  const itemCounts = {}; // No longer needed as separate state, counts are in requests objects
   const loading = isLoading;
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -176,17 +175,6 @@ export function RequestList() {
       setSortField(field);
       setSortDirection('asc');
     }
-  };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) {
-      return <ArrowUpDown size={14} className="text-slate-400 opacity-50" />;
-    }
-    return sortDirection === 'asc' ? (
-      <ArrowUp size={14} className="text-blue-600" />
-    ) : (
-      <ArrowDown size={14} className="text-blue-600" />
-    );
   };
 
   const clearFilters = () => {
@@ -315,8 +303,78 @@ export function RequestList() {
     setFilterStatus(filterStatus === status ? '' : status);
   };
 
+  const columns: DataTableColumn<any>[] = [
+    {
+      key: 'numero',
+      label: 'ID',
+      sortable: true,
+      render: (req) => (
+        <TableCells.Id 
+          value={req.numero} 
+          badge={user && req.usuario_id === user.id ? (
+            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded uppercase tracking-wider">
+              Você
+            </span>
+          ) : undefined}
+        />
+      )
+    },
+    {
+      key: 'data_envio',
+      label: 'Data',
+      sortable: true,
+      render: (req) => req.status === 'Aberto' ? (
+        <TableCells.Text text="—" />
+      ) : (
+        <TableCells.Date 
+          date={formatInSystemTime(req.data_envio || req.data_abertura, 'dd/MM/yyyy')} 
+          time={formatInSystemTime(req.data_envio || req.data_abertura, 'HH:mm')} 
+        />
+      )
+    },
+    {
+      key: 'fazenda',
+      label: 'Filial',
+      sortable: true,
+      render: (req) => <TableCells.Farm name={req.fazenda_nome} />
+    },
+    {
+      key: 'usuario',
+      label: 'Solicitante',
+      sortable: true,
+      render: (req) => <TableCells.User name={req.usuario_nome} />
+    },
+    {
+      key: 'items',
+      label: 'Itens',
+      sortable: true,
+      align: 'center',
+      render: (req) => <TableCells.Text text={req.items_count || 0} />
+    },
+    {
+      key: 'prioridade',
+      label: 'Prioridade',
+      sortable: true,
+      render: (req) => <TableCells.Priority priority={req.prioridade} />
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (req) => {
+        const displayStatus = req.status === 'Aberto' ? 'Rascunho' : req.status;
+        const variant = req.status === 'Aberto' ? 'default'
+                      : req.status === 'Aguardando' ? 'warning'
+                      : req.status === 'Em Cadastro' ? 'purple'
+                      : req.status === 'Finalizado' ? 'success'
+                      : 'orange';
+        return <TableCells.Status status={displayStatus} variant={variant} />;
+      }
+    }
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">
+    <div className="p-6 w-full animate-in fade-in duration-500 space-y-6 pb-20">
       {/* Header */}
       <PageHeader
         title="Solicitações de Cadastro"
@@ -324,45 +382,34 @@ export function RequestList() {
         icon={LayoutDashboard}
       >
         {canCreate && (
-          <button
-            onClick={handleCreateNew}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all font-semibold"
-          >
-            <Plus size={20} /> Nova Solicitação
-          </button>
+          <Button icon={Plus} onClick={handleCreateNew}>
+            Nova Solicitação
+          </Button>
         )}
       </PageHeader>
 
       {/* Tabs */}
-      <div className="border-b border-slate-200">
-        <div className="flex gap-8">
-          <button
-            onClick={() => setViewType('LIST')}
-            className={`pb-4 text-sm font-bold flex items-center gap-2 transition-colors border-b-2 ${viewType === 'LIST'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-          >
-            <FileText size={16} />
-            Lista de Solicitações
-          </button>
-          <button
-            onClick={() => setViewType('DASHBOARD')}
-            className={`pb-4 text-sm font-bold flex items-center gap-2 transition-colors border-b-2 ${viewType === 'DASHBOARD'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-          >
-            <LayoutDashboard size={16} />
-            Visão Geral
-          </button>
-        </div>
-      </div>
+      <TabBar
+        tabs={[
+          { id: 'LIST' as const, label: 'Lista de Solicitações', icon: FileText },
+          { id: 'DASHBOARD' as const, label: 'Indicadores', icon: BarChart3 },
+          { id: 'REGRAS_PDM' as const, label: 'Manual do PDM', icon: BookOpen },
+        ]}
+        activeTab={viewType}
+        onTabChange={(tab) => setViewType(tab as typeof viewType)}
+      />
 
       {/* Content - Dashboard */}
       {viewType === 'DASHBOARD' && (
         <div className="animate-in fade-in slide-in-from-left-4 duration-300">
           <RegistrarDashboard hideHeader={true} />
+        </div>
+      )}
+
+      {/* Content - Regras PDM */}
+      {viewType === 'REGRAS_PDM' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <PdmManual />
         </div>
       )}
 
@@ -437,268 +484,94 @@ export function RequestList() {
               hasActiveFilters={!!hasActiveFilters}
               children={
                 !isRestrictedToOwn && (
-                  <button
+                  <Button
+                    variant={showOnlyMine ? 'primary' : 'secondary'}
+                    size="md"
                     onClick={() => setShowOnlyMine(!showOnlyMine)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm h-full ${showOnlyMine
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                      }`}
                   >
                     {showOnlyMine ? '✅ Minhas SCs' : '👤 Minhas SCs'}
-                  </button>
+                  </Button>
                 )
               }
               advancedFilters={
                 <>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <Calendar size={12} /> Data Inicial
-                    </label>
-                    <input
+                  <FormField label="Data Inicial">
+                    <Input
                       type="date"
-                      className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
                       value={filterStartDate}
                       onChange={(e) => setFilterStartDate(e.target.value)}
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <Calendar size={12} /> Data Final
-                    </label>
-                    <input
+                  </FormField>
+                  <FormField label="Data Final">
+                    <Input
                       type="date"
-                      className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
                       value={filterEndDate}
                       onChange={(e) => setFilterEndDate(e.target.value)}
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <Building2 size={12} /> Filial
-                    </label>
-                    <select
-                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                  </FormField>
+                  <FormField label="Filial">
+                    <Select
                       value={filterFarm}
                       onChange={(e) => setFilterFarm(e.target.value)}
-                    >
-                      <option value="">Todas</option>
-                      {availableFarms.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <User size={12} /> Solicitante
-                    </label>
-                    <select
-                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      placeholder="Todas"
+                      options={availableFarms.map((f) => ({ value: f.id, label: f.nome }))}
+                    />
+                  </FormField>
+                  <FormField label="Solicitante">
+                    <Select
                       value={filterUser}
                       onChange={(e) => setFilterUser(e.target.value)}
-                    >
-                      <option value="">Todos</option>
-                      {availableUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <AlertTriangle size={12} /> Prioridade
-                    </label>
-                    <select
-                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      placeholder="Todos"
+                      options={availableUsers.map((u) => ({ value: u.id, label: u.nome }))}
+                    />
+                  </FormField>
+                  <FormField label="Prioridade">
+                    <Select
                       value={filterPriority}
                       onChange={(e) => setFilterPriority(e.target.value)}
-                    >
-                      <option value="">Todas</option>
-                      <option value="Normal">Normal</option>
-                      <option value="Urgente">Urgente</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                      <CheckCircle size={12} /> Status
-                    </label>
-                    <select
-                      className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                      placeholder="Todas"
+                      options={[
+                        { value: 'Normal', label: 'Normal' },
+                        { value: 'Urgente', label: 'Urgente' },
+                      ]}
+                    />
+                  </FormField>
+                  <FormField label="Status">
+                    <Select
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value)}
-                    >
-                      <option value="">Todos</option>
-                      <option value="Aberto">Rascunho</option>
-                      <option value="Aguardando">Aguardando Aprovação</option>
-                      <option value="Em Cadastro">Em Cadastro</option>
-                      <option value="Finalizado">Finalizado</option>
-                      <option value="Devolvido">Devolvido</option>
-                    </select>
-                  </div>
+                      placeholder="Todos"
+                      options={[
+                        { value: 'Aberto', label: 'Rascunho' },
+                        { value: 'Aguardando', label: 'Aguardando Aprovação' },
+                        { value: 'Em Cadastro', label: 'Em Cadastro' },
+                        { value: 'Finalizado', label: 'Finalizado' },
+                        { value: 'Devolvido', label: 'Devolvido' },
+                      ]}
+                    />
+                  </FormField>
                 </>
               }
             />
 
             {/* Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('numero')}
-                      >
-                        <div className="flex items-center gap-2">
-                          ID <SortIcon field="numero" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('data_envio')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Data <SortIcon field="data_envio" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('fazenda')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Filial <SortIcon field="fazenda" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('usuario')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Solicitante <SortIcon field="usuario" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-center text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('items')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          Itens <SortIcon field="items" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('prioridade')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Prioridade <SortIcon field="prioridade" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100"
-                        onClick={() => handleSort('status')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Status <SortIcon field="status" />
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {sortedRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={8}>
-                          <EmptyState />
-                        </td>
-                      </tr>
-                    ) : (
-                      sortedRequests.map((req) => (
-                        <tr
-                          key={req.id}
-                          onClick={() => handleRowClick(req.id)}
-                          className={`group hover:bg-slate-50 transition-colors cursor-pointer ${user && req.usuario_id === user.id ? 'bg-blue-50/10' : ''}`}
-                        >
-                          <td className="px-6 py-4 font-mono text-slate-500 font-medium">
-                            <div className="flex items-center gap-2">
-                              #{req.numero}
-                              {user && req.usuario_id === user.id && (
-                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded uppercase tracking-wider">
-                                  Você
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-700">
-                            {req.status === 'Aberto' ? (
-                              <span className="text-slate-400 font-medium">—</span>
-                            ) : (
-                              <>
-                                {formatInSystemTime(req.data_envio || req.data_abertura, 'dd/MM/yyyy')}{' '}
-                                <span className="text-slate-400 text-xs ml-1">
-                                  {formatInSystemTime(req.data_envio || req.data_abertura, 'HH:mm')}
-                                </span>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <Building2 size={14} className="text-slate-700" />
-                              <span className="text-slate-700 font-medium">
-                                {req.fazenda_nome || 'N/A'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-600">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 uppercase">
-                                {(req.usuario_nome || 'U').charAt(0)}
-                              </div>
-                              {req.usuario_nome || 'Desconhecido'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-600 text-center font-medium">
-                            {req.items_count || 0}
-                          </td>
-                          <td className="px-6 py-4">
-                            <StatusBadge
-                              status={req.prioridade}
-                              variant={req.prioridade === 'Urgente' ? 'error' : 'default'}
-                              size="sm"
-                            />
-                          </td>
-                          <td className="px-6 py-4">
-                            <StatusBadge
-                              status={req.status === 'Aberto' ? 'Rascunho' : req.status}
-                              variant={
-                                req.status === 'Aberto'
-                                  ? 'default'
-                                  : req.status === 'Aguardando'
-                                    ? 'warning'
-                                    : req.status === 'Em Cadastro'
-                                      ? 'purple'
-                                      : req.status === 'Finalizado'
-                                        ? 'success'
-                                        : 'orange' // Devolvido
-                              }
-                              size="sm"
-                            />
-                          </td>
-
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="flex items-center justify-between text-sm text-slate-500 px-2">
-              <span>
-                Mostrando {sortedRequests.length} de {totalDatabaseCount} solicitação(ões)
-              </span>
-            </div>
+            <DataTable
+              data={sortedRequests}
+              columns={columns}
+              rowKey={(req) => req.id}
+              onRowClick={(req) => handleRowClick(req.id)}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSortChange={(field, dir) => {
+                setSortField(field as SortField);
+                setSortDirection(dir);
+              }}
+              pageSize={15}
+              rowClassName={(req) => user && req.usuario_id === user.id ? 'bg-blue-50/10' : ''}
+              emptyTitle="Nenhuma solicitação encontrada"
+              emptyDescription="Não há solicitações que correspondam aos filtros atuais."
+              emptyIcon={FileText}
+            />
           </>
         )}
       </div>

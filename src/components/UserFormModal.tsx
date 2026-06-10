@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../context/AuthContext';
 import { db, roleService } from '../services/supabaseService';
+import { graphService } from '../services/graphService';
 import type { Usuario, Funcao, Fazenda } from '../types';
 import { Save, UserPlus, Eye, EyeOff, Wand2, Mail, Phone, AtSign, User } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // UI Kit
 import { ModalHeader } from './ui/ModalHeader';
@@ -72,6 +74,11 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
     setFuncoes(funcoesData);
     setFazendas(fazendasData);
     setAllUsers(usersData);
+
+    if (user) {
+      setValue('funcao_id', user.funcao_id || '', { shouldValidate: true });
+      setValue('fazenda_id', user.fazenda_id || '', { shouldValidate: true });
+    }
   };
 
   const generateUniquePassword = () => {
@@ -137,7 +144,52 @@ export function UserFormModal({ user, onClose }: UserFormModalProps) {
           },
           currentUser.id,
         );
-        // alert('Usuário criado com sucesso!');
+        // Enviar e-mail de boas-vindas
+        if (data.email) {
+          const systemUrl = window.location.origin;
+          const subject = 'Bem-vindo ao Sistema SIGA';
+          const htmlBody = `
+            <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+              <div style="background-color: #0d9488; padding: 20px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Sistema SIGA</h1>
+              </div>
+              <div style="padding: 30px; background-color: #ffffff;">
+                <h2 style="color: #0f766e; margin-top: 0;">Olá, ${data.nome}!</h2>
+                <p style="font-size: 16px; line-height: 1.5;">Seu acesso ao Sistema SIGA foi criado com sucesso.</p>
+                <p style="font-size: 16px; line-height: 1.5;">Abaixo estão suas credenciais para o primeiro acesso:</p>
+                <div style="background-color: #f8fafc; border-left: 4px solid #0d9488; padding: 15px; margin: 20px 0;">
+                  <p style="margin: 5px 0;"><strong>Link de Acesso:</strong> <a href="${systemUrl}" style="color: #0d9488; text-decoration: none;">${systemUrl}</a></p>
+                  <p style="margin: 5px 0;"><strong>Usuário (Login):</strong> ${data.login}</p>
+                  <p style="margin: 5px 0;"><strong>Senha Temporária:</strong> ${data.senha}</p>
+                </div>
+                <p style="font-size: 14px; color: #64748b; margin-top: 30px;">Recomendamos que você altere sua senha após o primeiro acesso por motivos de segurança.</p>
+              </div>
+              <div style="background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; color: #94a3b8;">
+                <p style="margin: 0;">Este é um e-mail automático. Por favor, não responda.</p>
+              </div>
+            </div>
+          `;
+
+          try {
+            const emailResult = await graphService.sendEmail(
+              currentUser.email || 'noreply@nadiana.com.br',
+              [data.email],
+              subject,
+              htmlBody
+            );
+            if (!emailResult.success) {
+              console.error('Erro ao enviar e-mail:', emailResult.error);
+              toast.error('Usuário criado, mas houve um erro ao enviar o e-mail de acesso.');
+            } else {
+              toast.success('Usuário criado e e-mail enviado com sucesso!');
+            }
+          } catch (emailError) {
+            console.error('Erro no catch de envio de e-mail:', emailError);
+            toast.error('Usuário criado, mas não foi possível enviar o e-mail.');
+          }
+        } else {
+          toast.success('Usuário criado com sucesso!');
+        }
       }
       onClose(true);
     } catch (error: any) {

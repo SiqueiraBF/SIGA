@@ -10,6 +10,7 @@ export interface PcmDashboardMetrics {
     entriesVsExitsByDay: { date: string; criadas: number; finalizadas: number; aguardando: number }[];
     totalCriadas: number;
     totalFinalizadas: number;
+    retentionRanking: PcmRequest[];
 }
 
 export type PeriodFilter = '7D' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
@@ -23,7 +24,8 @@ export function usePcmDashboardMetrics(
     return useQuery({
         queryKey: ['pcm-dashboard', period, customStart?.toISOString(), customEnd?.toISOString(), selectedFarm],
         queryFn: async (): Promise<PcmDashboardMetrics> => {
-            const requests = await pcmService.getRequests();
+            const allRequests = await pcmService.getRequests();
+            const requests = allRequests.filter(r => r.status !== 'CANCELLED');
 
             const today = new Date();
             let startDate: Date;
@@ -115,6 +117,18 @@ export function usePcmDashboardMetrics(
                 return dateA - dateB;
             });
 
+            const retentionRanking = requests.filter(r =>
+                matchesFarm(r) &&
+                r.created_at &&
+                isWithinPeriod(r.created_at)
+            );
+            retentionRanking.sort((a, b) => {
+                const now = new Date();
+                const diffA = differenceInMinutes(a.data_confirmacao ? parseISO(a.data_confirmacao) : now, parseISO(a.created_at));
+                const diffB = differenceInMinutes(b.data_confirmacao ? parseISO(b.data_confirmacao) : now, parseISO(b.created_at));
+                return diffB - diffA;
+            });
+
             const farmMap = new Map<string, number>();
             requests.forEach(r => {
                 if (r.created_at && isWithinPeriod(r.created_at)) {
@@ -182,7 +196,8 @@ export function usePcmDashboardMetrics(
                 volumeByFarm,
                 entriesVsExitsByDay,
                 totalCriadas,
-                totalFinalizadas
+                totalFinalizadas,
+                retentionRanking
             };
         },
         staleTime: 5 * 60 * 1000,

@@ -1,6 +1,11 @@
 
 import React, { useRef, useEffect } from 'react';
-import { Plus, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
+import { FormField } from '../ui/FormField';
+import { Input } from '../ui/Input';
+import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
+import toast from 'react-hot-toast';
 
 interface RequestItemFormProps {
     editingItem: any;
@@ -38,7 +43,7 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
         const data = new FormData(e.currentTarget as HTMLFormElement);
         const desc = (data.get('descricao') as string)?.toUpperCase();
         if (!desc) {
-            alert("Descrição obrigatória");
+            toast.error("Descrição obrigatória");
             return;
         }
 
@@ -79,62 +84,72 @@ export const RequestItemForm: React.FC<RequestItemFormProps> = ({
                 {/* Row 1 */}
                 <div className="flex gap-4">
                     <div className="flex-[3]">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descrição</label>
-                        <input
-                            name="descricao"
-                            type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
-                            placeholder="Nome do produto"
-                            required
-                        />
+                        <FormField label="Descrição" hint="Descreva o item de forma clara, sem abreviações.">
+                            <Input
+                                name="descricao"
+                                type="text"
+                                className="uppercase"
+                                placeholder="Ex: PNEU 295/80R22.5 BORRACHUDO"
+                                required
+                            />
+                        </FormField>
                     </div>
                     <div className="flex-[2]">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Marca</label>
-                        <input
-                            name="marca"
-                            type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
-                            placeholder="-"
-                        />
+                        <FormField label="Marca" hint="Nome do fabricante (Opcional)">
+                            <Input
+                                name="marca"
+                                type="text"
+                                className="uppercase"
+                                placeholder="Ex: FIRESTONE, TRAMONTINA"
+                            />
+                        </FormField>
                     </div>
                     <div className="w-32">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unidade</label>
-                        <div className="relative">
-                            <select name="unidade" className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none appearance-none cursor-pointer">
-                                <option value="UN">UN</option>
-                                <option value="KG">KG</option>
-                                <option value="LT">LT</option>
-                                <option value="CX">CX</option>
-                                <option value="M">M</option>
-                                <option value="PC">PC</option>
-                            </select>
-                            <ArrowUpDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                        </div>
+                        <FormField label="Unidade">
+                            <Select
+                                name="unidade"
+                                options={[
+                                    { value: 'UN', label: 'UN' },
+                                    { value: 'KG', label: 'KG' },
+                                    { value: 'LT', label: 'LT' },
+                                    { value: 'CX', label: 'CX' },
+                                    { value: 'M', label: 'M' },
+                                    { value: 'PC', label: 'PC' }
+                                ]}
+                            />
+                        </FormField>
                     </div>
                 </div>
 
                 {/* Row 2 */}
-                <div className="flex gap-4 items-end">
+                <div className="flex gap-4 items-start">
                     <div className="flex-[2]">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Referência</label>
-                        <input
-                            name="referencia"
-                            type="text"
-                            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:border-blue-500 outline-none transition-shadow placeholder:text-slate-300 uppercase"
-                            placeholder="-"
-                        />
+                        <FormField label="Referência" hint="Part number ou modelo (Opcional)">
+                            <Input
+                                name="referencia"
+                                type="text"
+                                className="uppercase"
+                                placeholder="Ex: T831, 10X20"
+                            />
+                        </FormField>
                     </div>
                     <div className="flex-[4]">
-                        {editingItem ? (
-                            <div className="flex gap-2 h-[38px]">
-                                <button type="button" onClick={onCancel} disabled={loading} className="flex-1 bg-slate-200 text-slate-600 font-bold rounded-lg text-xs uppercase hover:bg-slate-300 disabled:opacity-50 transition-colors">Cancelar</button>
-                                <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold rounded-lg text-xs uppercase hover:bg-blue-700 disabled:opacity-50 shadow-md shadow-blue-200 transition-all">Atualizar Item</button>
-                            </div>
-                        ) : (
-                            <button type="submit" disabled={loading} className="w-full h-[38px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300 font-extrabold rounded-lg text-xs uppercase tracking-wide transition-all shadow-sm active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed">
-                                Adicionar Item na Lista
-                            </button>
-                        )}
+                        <FormField label={"\u00A0"}>
+                            {editingItem ? (
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="secondary" onClick={onCancel} disabled={loading} fullWidth>
+                                        Cancelar
+                                    </Button>
+                                    <Button type="submit" variant="primary" disabled={loading} fullWidth>
+                                        Atualizar Item
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Button type="submit" variant="success" disabled={loading} fullWidth>
+                                    Adicionar Item na Lista
+                                </Button>
+                            )}
+                        </FormField>
                     </div>
                 </div>
             </form>

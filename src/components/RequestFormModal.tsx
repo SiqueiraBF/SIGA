@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Modal } from './ui/Modal';
 import { useRequestForm } from './RequestForm/useRequestForm';
 import { RequestHeader } from './RequestForm/RequestHeader';
 import { RequestSidePanel } from './RequestForm/RequestSidePanel';
@@ -8,6 +9,7 @@ import { RequestItemForm } from './RequestForm/RequestItemForm';
 import { RequestAnalystForm } from './RequestForm/RequestAnalystForm';
 import { RequestItemsList } from './RequestForm/RequestItemsList';
 import { AuditLogModal } from './AuditLogModal';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 
 interface RequestFormModalProps {
   isOpen: boolean;
@@ -28,16 +30,20 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
     isNew, isOwner, isAnalystMode, isRegistrar,
     canEditContext, canEditItems, canEditAttachments, canDelete, canReopen, hasFullManagement,
     handleGlobalAction, handleNotifyWhatsapp, handleDeleteItem,
-    saveItem, analyzeItem,
-    attachments, handleUploadAttachment, handleDeleteAttachment
+    saveItem, analyzeItem, handleReprocessAI,
+    attachments, handleUploadAttachment, handleDeleteAttachment,
+    confirmDialog, setConfirmDialog
   } = useRequestForm(props);
 
-  if (!props.isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-6xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans">
-
+    <>
+      <Modal 
+        isOpen={props.isOpen} 
+        onClose={props.onClose} 
+        size="xl" 
+        className="max-w-6xl h-[85vh] !rounded-2xl"
+        closeOnOverlayClick={false}
+      >
         <RequestHeader
           isNew={isNew}
           contextData={contextData}
@@ -71,16 +77,6 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
               />
             )}
 
-            {/* Analyst Mode */}
-            {isAnalystMode && (
-              <RequestAnalystForm
-                analystSelectedItem={analystSelectedItem}
-                loading={loading}
-                onAnalyze={analyzeItem}
-                onCancel={() => setAnalystSelectedItem(null)}
-              />
-            )}
-
             <RequestItemsList
               items={items}
               contextData={contextData}
@@ -90,6 +86,9 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
               setAnalystSelectedItem={setAnalystSelectedItem}
               handleEditItem={setEditingItem}
               handleDeleteItem={handleDeleteItem}
+              onAnalyzeItem={analyzeItem}
+              onReprocessAI={handleReprocessAI}
+              loading={loading}
             />
           </div>
         </div>
@@ -109,8 +108,7 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
           handleNotify={handleNotifyWhatsapp}
           canReopen={canReopen}
         />
-
-      </div>
+      </Modal>
 
       {currentRequestId && (
         <AuditLogModal
@@ -119,6 +117,16 @@ export const RequestFormModal: React.FC<RequestFormModalProps> = (props) => {
           registroId={currentRequestId}
         />
       )}
-    </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        variant={confirmDialog.variant}
+        confirmLabel={confirmDialog.confirmLabel}
+      />
+    </>
   );
 };

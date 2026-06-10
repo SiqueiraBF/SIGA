@@ -18,6 +18,7 @@ export type Modulo =
   | 'gestao_recebimento_direto'
   | 'solicitacoes_pcm'
   | 'pagamentos_fora_prazo'
+  | 'registro_pagamentos_atraso'
   | 'controle_saving';
 
 export type ViewScope = 'ALL' | 'OWN_ONLY' | 'SAME_FARM' | 'NONE';
@@ -117,6 +118,9 @@ export interface ItemSolicitacao {
   cod_reduzido_unisystem?: string;
   motivo_reprovacao?: string;
   tipo_tratativa?: 'NOVO' | 'REATIVADO' | 'EXISTENTE' | 'CORRECAO';
+  analise_pdm_status?: 'Aprovado' | 'FALTANDO_INFO' | string;
+  analise_pdm_msg?: string;
+  analise_pdm_padronizado?: string;
 }
 
 export type AcaoLog = 'CRIAR' | 'EDITAR' | 'STATUS' | 'EXCLUIR' | 'ITEM_EXCLUIDO' | 'ITEM_ALTERADO';
@@ -384,3 +388,35 @@ export interface DirectReceipt {
   usuario?: { nome: string };
   fazenda?: { nome: string };
 }
+
+export interface PdmCategoria {
+  id: string;
+  nome: string;
+  descricao?: string;
+  estrutura_linear?: string;
+  diretrizes: string[];
+  exemplos: string[];
+}
+
+export interface PdmAbreviacao {
+  termo: string;
+  abreviacao: string;
+}
+
+export interface PdmGrupoTipo {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  exemplos: string[];
+}
+
+export interface PdmAiLog {
+  id: string;
+  created_at: string;
+  status_retornado: string;
+  descricao_bruta: string;
+  mensagem_erro?: string;
+  categoria_detectada?: string;
+  padronizado?: string;
+}
+

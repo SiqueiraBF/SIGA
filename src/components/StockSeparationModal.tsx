@@ -209,7 +209,7 @@ export function StockSeparationModal({ isOpen, onClose, onSave, request }: Stock
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <span className={`font-bold ${(item.material?.current_stock || 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                {item.material?.current_stock}
+                                                {item.material?.current_stock ?? 0}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-center">

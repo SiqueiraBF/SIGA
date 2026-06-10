@@ -15,11 +15,10 @@ export function LatePaymentsManager() {
   const { user, role } = useAuth();
   const isAdmin = role?.nome === 'Administrador';
 
-  // Permissões do módulo (usando a mesma premissa do out-of-deadline, ajustar conforme necessário)
-  // Como definido nas regras, vamos utilizar a permissão existente ou apenas liberar para admins por agora (já que não foi especificado uma permissão exata no token do user)
-  // "deve seguir o padrão do gestão de perfil, somente quem tem acesso a este modulo pode ver,"
-  // Vamos assumir que quem acessa Pagamentos Fora do Prazo também acessa ou tem uma permissão similar, mas vamos simplificar para ver se a rota está ativa
-  const canView = isAdmin || (role?.permissoes?.pagamentos_fora_prazo?.view_scope && role?.permissoes?.pagamentos_fora_prazo?.view_scope !== 'NONE');
+  // Permissões do módulo
+  // Como definido nas regras, vamos utilizar a permissão existente ou apenas liberar para admins por agora
+  // Somente quem tem acesso a este módulo pode ver
+  const canView = isAdmin || (role?.permissoes?.registro_pagamentos_atraso?.view_scope && role?.permissoes?.registro_pagamentos_atraso?.view_scope !== 'NONE');
   
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<LatePayment[]>([]);
@@ -115,13 +114,15 @@ export function LatePaymentsManager() {
         subtitle="Controle de Notas Fiscais/Boletos com Juros ou Desconto"
         icon={TrendingDown}
       >
-        <button
-          onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 text-white bg-teal-600 hover:bg-teal-700 rounded-xl font-bold transition-all shadow-lg shadow-teal-500/25 active:scale-95"
-        >
-          <Plus size={18} />
-          Novo Registro
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setIsFormOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 text-white bg-teal-600 hover:bg-teal-700 rounded-xl font-bold transition-all shadow-lg shadow-teal-500/25 active:scale-95"
+          >
+            <Plus size={18} />
+            Novo Registro
+          </button>
+        )}
       </PageHeader>
 
       {/* Filtros */}

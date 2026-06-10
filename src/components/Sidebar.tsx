@@ -153,7 +153,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           label: 'Registro de Pagamentos (Atrasos)',
           icon: <TrendingDown size={20} />,
           path: '/registro-pagamentos-atraso',
-          modules: ['pagamentos_fora_prazo'], // Por agora o mesmo perfil de acesso
+          modules: ['registro_pagamentos_atraso'],
         },
       ],
     },

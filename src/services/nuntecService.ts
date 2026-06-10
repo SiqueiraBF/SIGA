@@ -3,11 +3,13 @@ import { getVehiclesService } from './nuntec/vehicles';
 import { getStockMeasurementsService } from './nuntec/stock';
 import { getAuditDataService } from './nuntec/audit';
 import { getFuelingConsistencyService } from './nuntec/fueling';
+import { getOperatorsService } from './nuntec/operators';
 // Placeholder exports until we migrate everything
 import { nuntecService as legacyService } from './nuntecService.legacy';
 
 export const nuntecService = {
   getVehicles: getVehiclesService,
+  getOperators: getOperatorsService,
   getStockMeasurements: getStockMeasurementsService,
   getAuditData: getAuditDataService,
   getFuelingConsistency: getFuelingConsistencyService,

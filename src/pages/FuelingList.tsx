@@ -374,8 +374,12 @@ export function FuelingList() {
 
   // Removed manual loadData in favor of React Query
   // Helper to re-fetch if needed (e.g. after edit)
-  const refetchData = () => {
-    queryClient.invalidateQueries({ queryKey: ['abastecimentos'] });
+  const refetchData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['abastecimentos'] }),
+      queryClient.invalidateQueries({ queryKey: ['nuntec-transfers'] }),
+      queryClient.invalidateQueries({ queryKey: ['all-existing-nuntec-ids'] })
+    ]);
   };
 
   const handleCreate = () => {
@@ -396,7 +400,7 @@ export function FuelingList() {
   const handleConfirm = async (item: Abastecimento, nuntecId?: string) => {
     try {
       await fuelService.confirmBaixa(item.id, user!.id, nuntecId);
-      refetchData();
+      await refetchData();
       setIsDetailsOpen(false);
     } catch (error) {
       console.error(error);
@@ -419,8 +423,8 @@ export function FuelingList() {
     }
   };
 
-  const handleFormSave = () => {
-    refetchData();
+  const handleFormSave = async () => {
+    await refetchData();
   };
 
   const handleResolveNuntec = (transfer: NuntecTransfer) => {
@@ -430,9 +434,7 @@ export function FuelingList() {
 
   const handleResolveSuccess = async () => {
     // Refresh local data (to see the new Abastecimento) and Nuntec list (to remove the item)
-    refetchData();
-    // Force refresh of Nuntec data immediately after loadData finishes
-    // (useEffect on abastecimentos will trigger, but let's be explicit if needed or let useEffect handle it)
+    await refetchData();
   };
 
   async function handleIgnore(transfer: NuntecTransfer) {
@@ -1092,7 +1094,12 @@ export function FuelingList() {
                                 <span className="font-medium text-slate-600">
                                   {format(parseISO(item.data_abastecimento), 'dd/MM/yyyy HH:mm')}
                                 </span>
-                                <div className="flex gap-1.5 mt-0.5">
+                                <div className="flex gap-1.5 mt-0.5 items-center">
+                                  {item.nuntec_transfer_id ? (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded" title="Baixa via Transferência">Gerente</span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded" title="Lançamento Manual">Manual</span>
+                                  )}
                                   {item.nuntec_transfer_id && (
                                     <span
                                       className="text-[10px] text-amber-600 font-mono"
@@ -1468,6 +1475,15 @@ export function FuelingList() {
         <FuelingDetailsModal
           isOpen={isDetailsOpen}
           onClose={() => setIsDetailsOpen(false)}
+          canConfirm={
+            !!(selectedItem &&
+              checkAccess({
+                module: MODULE_KEY,
+                action: 'confirm',
+                resourceOwnerId: selectedItem.usuario_id,
+                resourceStatus: selectedItem.status,
+              }))
+          }
           onConfirm={
             selectedItem &&
               checkAccess({
@@ -1476,19 +1492,19 @@ export function FuelingList() {
                 resourceOwnerId: selectedItem.usuario_id,
                 resourceStatus: selectedItem.status,
               })
-              ? (nuntecId?: string) => selectedItem && handleConfirm(selectedItem, nuntecId)
-              : undefined
+              ? (item, nuntecId) => handleConfirm(item, nuntecId)
+              : (undefined as any)
           }
           data={
             selectedItem
-              ? {
+              ? ({
                 ...selectedItem,
                 usuario: selectedItem.usuario || {
                   nome:
                     usuarios.find((u) => u.id === selectedItem.usuario_id)?.nome || 'Desconhecido',
                 },
-              }
-              : undefined
+              } as any)
+              : null
           }
         />
 

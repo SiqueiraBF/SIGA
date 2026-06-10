@@ -1,5 +1,7 @@
 import React from 'react';
 import { X, LucideIcon } from 'lucide-react';
+import { twMerge } from 'tailwind-merge';
+import { IconButton } from './IconButton';
 
 interface ModalHeaderProps {
   title: string;
@@ -9,6 +11,8 @@ interface ModalHeaderProps {
   className?: string;
   iconClassName?: string;
   actions?: React.ReactNode;
+  eliteStyle?: boolean;
+  statusBadge?: React.ReactNode;
 }
 
 export function ModalHeader({
@@ -17,21 +21,28 @@ export function ModalHeader({
   icon: Icon,
   onClose,
   className = '',
-  iconClassName = 'text-blue-600',
+  iconClassName = '',
   actions,
+  eliteStyle,
+  statusBadge,
 }: ModalHeaderProps) {
   return (
     <div
-      className={`px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0 ${className}`}
+      className={twMerge("px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0", className)}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         {Icon && (
-          <div className={`p-2 rounded-lg border border-slate-100 shadow-sm ${iconClassName}`}>
-            <Icon size={20} />
+          <div className={twMerge(
+            "flex items-center justify-center transition-colors shrink-0", 
+            eliteStyle ? "bg-slate-100 text-slate-600 p-3.5 rounded-2xl" : "border border-slate-100 shadow-sm p-2 rounded-lg text-blue-600", 
+            iconClassName
+          )}>
+            <Icon size={eliteStyle ? 32 : 20} strokeWidth={eliteStyle ? 1.5 : 2} />
           </div>
         )}
         <div>
-          <h2 className="text-lg font-bold text-slate-800 leading-tight">{title}</h2>
+          <h2 className={twMerge("text-slate-800", eliteStyle ? "text-2xl font-extrabold tracking-tight" : "text-lg font-bold leading-tight")}>{title}</h2>
+          {statusBadge && <div className={twMerge("flex items-center gap-2", eliteStyle ? "mt-0.5" : "mt-2")}>{statusBadge}</div>}
           {subtitle && (
             <div className="text-xs font-semibold text-slate-400 mt-0.5">{subtitle}</div>
           )}
@@ -39,13 +50,13 @@ export function ModalHeader({
       </div>
       <div className="flex items-center gap-2">
         {actions}
-        <button
+        <IconButton
+          icon={X}
+          variant="default"
+          label="Fechar"
           onClick={onClose}
-          className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-lg transition-colors"
-          aria-label="Fermer"
-        >
-          <X size={20} />
-        </button>
+          className="hover:text-red-500 hover:bg-red-50 border-none shadow-none"
+        />
       </div>
     </div>
   );

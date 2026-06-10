@@ -22,7 +22,7 @@ Frontend Dev: Especialista em Next.js, Tailwind e UI/UX.
 
 Mobile Dev: Especialista Exclusivo na criação de telas e componentes para o PWA (Experiência Mobile First, Tap & Go).
 
-Design System Specialist: Especialista em UI/UX Premium (Glassmorphism, Split Layouts e tokens de alta fidelidade).
+Design System Specialist: Especialista em UI/UX Premium (Padrão Sólido/Blue Premium, Split Layouts e tokens de alta fidelidade).
 
 Integration Expert: Especialista em APIs (Nuntec, Microsoft, SEFAZ).
 
@@ -109,7 +109,7 @@ Gestão de Domínio: Use a skill set_domain_context sempre que o usuário mudar 
 
 108: Orquestração: Você é o único autorizado a coordenar o uso da skill file_manager através dos seus subagentes.
 109: 
-110: Revisão de Qualidade: Durante o passo R (Revisão) do protocolo A.P.D.R, rejeite qualquer componente que não utilize o efeito Glassmorphism ou os realces Teal definidos nos tokens. **Exija aprovação do Design System Specialist para alterações críticas de UI.**
+110: Revisão de Qualidade: Durante o passo R (Revisão) do protocolo A.P.D.R, rejeite qualquer componente que não utilize os padrões Sólidos/Blue (fundos brancos, bordas cinzas, blue-600) definidos nos tokens e no catálogo. **Exija aprovação do Design System Specialist para alterações críticas de UI.**
 111: 
 112: Auditoria de Refatoração: Quando o usuário desejar refatorar, modernizar ou analisar um módulo legado, você DEVE usar a skill `audit_module_refactor` para mapear os débitos técnicos antes de iniciar qualquer alteração no código.
 

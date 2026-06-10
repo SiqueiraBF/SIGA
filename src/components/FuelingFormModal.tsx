@@ -3,6 +3,8 @@ import { Save, Droplet, User, MapPin, Edit2 } from 'lucide-react';
 import type { Abastecimento, Fazenda, Posto, Veiculo } from '../types';
 import { fuelService } from '../services/fuelService';
 import { vehicleService } from '../services/vehicleService';
+import { nuntecService } from '../services/nuntecService';
+import type { NuntecOperator } from '../services/nuntec/types';
 import { useAuth } from '../context/AuthContext';
 
 // UI Kit
@@ -12,7 +14,7 @@ import { ModalFooter } from './ui/ModalFooter';
 interface FuelingFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   initialData?: Abastecimento;
   fazendas: Fazenda[];
   postos: Posto[]; // pass all, we filter inside
@@ -56,6 +58,7 @@ export function FuelingFormModal({
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [veiculosLista, setVeiculosLista] = useState<Veiculo[]>([]);
+  const [operadoresLista, setOperadoresLista] = useState<NuntecOperator[]>([]);
 
   // Form State
   const [dataAbastecimento, setDataAbastecimento] = useState(new Date().toISOString().slice(0, 16));
@@ -83,6 +86,7 @@ export function FuelingFormModal({
   useEffect(() => {
     if (isOpen) {
       vehicleService.getAll().then(setVeiculosLista).catch(console.error);
+      nuntecService.getOperators().then(setOperadoresLista).catch(console.error);
 
       if (initialData) {
         setDataAbastecimento(new Date(initialData.data_abastecimento).toISOString().slice(0, 16));
@@ -136,6 +140,7 @@ export function FuelingFormModal({
           : veiculoNome,
         volume: parseFloat(volume),
         operador,
+        nuntec_operator_id: operadoresLista.find(op => op.name === operador)?.id || initialData?.nuntec_operator_id || undefined,
         operacao,
         cultura,
         tipo_marcador: tipoMarcador,
@@ -146,11 +151,11 @@ export function FuelingFormModal({
       };
 
       if (initialData) {
-        await fuelService.updateAbastecimento(initialData.id, payload, user!.id);
+        await fuelService.updateAbastecimento(initialData.id, payload as any, user!.id);
       } else {
-        await fuelService.createAbastecimento(payload, user!.id);
+        await fuelService.createAbastecimento(payload as any, user!.id);
       }
-      onSave();
+      await onSave();
       onClose();
     } catch (error: any) {
       console.error('Erro detalhado:', error);
@@ -392,17 +397,26 @@ export function FuelingFormModal({
                   </label>
                   <div className="relative">
                     <User
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10"
                       size={18}
                     />
-                    <input
-                      type="text"
+                    <select
                       required
                       value={operador}
                       onChange={(e) => setOperador(e.target.value)}
-                      placeholder="Nome do funcionário"
-                      className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
+                      className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white appearance-none"
+                    >
+                      <option value="">Selecione o operador...</option>
+                      {operadoresLista.map(op => (
+                        <option key={op.id} value={op.name}>
+                          {op.name} (ID: {op.id})
+                        </option>
+                      ))}
+                      {/* Caso o operador atual seja um digitado manualmente anteriormente e não esteja na lista */}
+                      {operador && !operadoresLista.find(o => o.name === operador) && (
+                        <option value={operador}>{operador} (Manual)</option>
+                      )}
+                    </select>
                   </div>
                 </div>
 
@@ -456,18 +470,25 @@ export function FuelingFormModal({
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <div className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></div>
-              ) : (
-                <Save size={20} />
+            <div className="flex items-center gap-3">
+              {((veiculoPossuiCadastro === true && !veiculoId) || (veiculoPossuiCadastro === false && !veiculoNome.trim())) && (
+                <span className="text-xs text-red-500 font-medium">
+                  Selecione ou informe um veículo
+                </span>
               )}
-              {initialData ? 'Salvar Alterações' : 'Confirmar Lançamento'}
-            </button>
+              <button
+                type="submit"
+                disabled={loading || !postoId || (veiculoPossuiCadastro === true && !veiculoId) || (veiculoPossuiCadastro === false && !veiculoNome.trim())}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <div className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></div>
+                ) : (
+                  <Save size={20} />
+                )}
+                {initialData ? 'Salvar Alterações' : 'Confirmar Lançamento'}
+              </button>
+            </div>
           </ModalFooter>
         </form>
       </div>

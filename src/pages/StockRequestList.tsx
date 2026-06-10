@@ -3,16 +3,25 @@ import { Plus, Package, Calendar, User, Truck, CheckCircle, Clock, XCircle, Buil
 import { PageHeader } from '../components/ui/PageHeader';
 import { StockRequestForm } from '../components/StockRequestForm';
 import { StockSeparationModal } from '../components/StockSeparationModal';
-import { StockEmailSettingsModal } from '../components/stock/StockEmailSettingsModal';
+import { EmailSettingsModal } from '../components/ui/EmailSettingsModal';
 import { TransferGuideModal } from '../components/TransferGuideModal';
 import { FilterBar } from '../components/ui/FilterBar';
 import { TableSkeleton } from '../components/ui/TableSkeleton';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { IconButton } from '../components/ui/IconButton';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { FormField } from '../components/ui/FormField';
+import { Card } from '../components/ui/Card';
+import { EmptyState } from '../components/ui/EmptyState';
 import { stockService } from '../services/stockService';
 import { db } from '../services/supabaseService';
 import { useAuth } from '../context/AuthContext';
 import { format, parseISO, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import toast from 'react-hot-toast';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import type { StockRequest, Fazenda, Usuario } from '../types';
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any; variant: any }> = {
@@ -48,6 +57,15 @@ export function StockRequestList() {
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [separationRequest, setSeparationRequest] = useState<StockRequest | null>(null);
     const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+
+    const [confirmDialog, setConfirmDialog] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        variant?: 'danger' | 'warning' | 'info';
+        onConfirm: () => void | Promise<void>;
+        isLoading?: boolean;
+    }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
     // Filter State
     const [searchTerm, setSearchTerm] = useState('');
@@ -120,14 +138,24 @@ export function StockRequestList() {
     };
 
     const handleDelete = async (data: StockRequest) => {
-        if (window.confirm('Tem certeza que deseja excluir esta solicitação? Esta ação não pode ser desfeita.')) {
-            try {
-                await stockService.deleteRequest(data.id);
-                loadData();
-            } catch (err: any) {
-                alert('Erro ao excluir: ' + err.message);
+        setConfirmDialog({
+            isOpen: true,
+            title: 'Excluir Solicitação',
+            description: 'Tem certeza que deseja excluir esta solicitação? Esta ação não pode ser desfeita.',
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmDialog(prev => ({ ...prev, isLoading: true }));
+                try {
+                    await stockService.deleteRequest(data.id);
+                    toast.success('Solicitação excluída com sucesso');
+                    loadData();
+                } catch (err: any) {
+                    toast.error('Erro ao excluir: ' + err.message);
+                } finally {
+                    setConfirmDialog(prev => ({ ...prev, isLoading: false }));
+                }
             }
-        }
+        });
     };
 
     const clearFilters = () => {
@@ -142,7 +170,7 @@ export function StockRequestList() {
 
     // --- Filter Logic ---
     const filteredRequests = useMemo(() => {
-        return requests.filter(req => {
+        const filtered = requests.filter(req => {
             // 1. Text Search (ID, Farm, User)
             if (searchTerm) {
                 const lowerTerm = searchTerm.toLowerCase();
@@ -173,6 +201,12 @@ export function StockRequestList() {
 
             return true;
         });
+
+        return filtered.sort((a, b) => {
+            if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+            if (b.status === 'PENDING' && a.status !== 'PENDING') return 1;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
     }, [requests, searchTerm, showOnlyMine, filterStatus, filterFarm, filterUser, filterStartDate, filterEndDate, user]);
 
     // Unique IDs for Dropdowns (Optimization: only show farms/users involved in requests? Or all? Using ALL from DB for simplicity in filter)
@@ -193,7 +227,7 @@ export function StockRequestList() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-500">
+        <div className="p-6 w-full animate-in fade-in duration-500 space-y-6 pb-20">
             {/* Header */}
             <PageHeader
                 title="Transferência de Estoque"
@@ -201,37 +235,40 @@ export function StockRequestList() {
                 icon={Package}
             >
                 <div className="flex gap-2">
-                    <button
+                    <IconButton
+                        icon={HelpCircle}
+                        label="Guia de Procedimento"
                         onClick={() => setIsGuideOpen(true)}
-                        className="bg-white border border-slate-200 text-slate-500 px-3 py-2 rounded-lg font-bold hover:bg-slate-50 hover:text-blue-600 transition-colors"
-                        title="Guia de Procedimento"
-                    >
-                        <HelpCircle size={20} />
-                    </button>
+                    />
 
                     {canManageNotifications && (
-                        <button
+                        <IconButton
+                            icon={Settings}
+                            label="Configurar E-mail"
                             onClick={() => setIsEmailSettingsOpen(true)}
-                            className="bg-slate-100 text-slate-600 px-3 py-2 rounded-lg font-bold hover:bg-slate-200 transition-colors"
-                            title="Configurar E-mails"
-                        >
-                            <Settings size={20} />
-                        </button>
+                        />
                     )}
                     {role?.permissoes?.gestao_transferencias?.edit_scope !== 'NONE' && (
-                        <button
+                        <Button
+                            icon={Plus}
                             onClick={() => { setSelectedRequestId(null); setIsModalOpen(true); }}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all font-semibold"
                         >
-                            <Plus size={20} /> Nova Requisição
-                        </button>
+                            Nova Requisição
+                        </Button>
                     )}
                 </div>
             </PageHeader>
 
-            {isEmailSettingsOpen && (
-                <StockEmailSettingsModal onClose={() => setIsEmailSettingsOpen(false)} />
-            )}
+            <EmailSettingsModal
+                isOpen={isEmailSettingsOpen}
+                onClose={() => setIsEmailSettingsOpen(false)}
+                title="Configurar E-mail · Transferência de Estoque"
+                subtitle="Defina quem recebe as solicitações de transferência"
+                globalMode
+                steps={[
+                    { title: "Destinatários de Transferência", subtitle: "E-mails que receberão as solicitações de transferência de estoque", configKeyPrefix: "email_estoque" }
+                ]}
+            />
 
             {/* Filter Bar */}
             <FilterBar
@@ -241,88 +278,60 @@ export function StockRequestList() {
                 onClear={clearFilters}
                 hasActiveFilters={!!hasActiveFilters}
                 children={
-                    <button
+                    <Button
                         onClick={() => setShowOnlyMine(!showOnlyMine)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-sm h-full ${showOnlyMine
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                            }`}
+                        variant={showOnlyMine ? 'primary' : 'secondary'}
+                        icon={showOnlyMine ? CheckCircle : User}
+                        className="h-full"
                     >
-                        {showOnlyMine ? '✅ Minhas Requisições' : '👤 Minhas Requisições'}
-                    </button>
+                        Minhas Requisições
+                    </Button>
                 }
                 advancedFilters={
                     <>
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                                <Calendar size={12} /> Data Inicial
-                            </label>
-                            <input
+                        <FormField label="Data Inicial">
+                            <Input
                                 type="date"
-                                className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
                                 value={filterStartDate}
                                 onChange={(e) => setFilterStartDate(e.target.value)}
                             />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                                <Calendar size={12} /> Data Final
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField label="Data Final">
+                            <Input
                                 type="date"
-                                className="w-full text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-2"
                                 value={filterEndDate}
                                 onChange={(e) => setFilterEndDate(e.target.value)}
                             />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                                <Building2 size={12} /> Filial
-                            </label>
-                            <select
-                                className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                        </FormField>
+                        <FormField label="Filial">
+                            <Select
                                 value={filterFarm}
                                 onChange={(e) => setFilterFarm(e.target.value)}
-                            >
-                                <option value="">Todas</option>
-                                {farms.map((f) => (
-                                    <option key={f.id} value={f.id}>{f.nome}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                                <User size={12} /> Solicitante
-                            </label>
-                            <select
-                                className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                                options={[{ value: '', label: 'Todas' }, ...farms.map(f => ({ value: f.id, label: f.nome }))]}
+                            />
+                        </FormField>
+                        <FormField label="Solicitante">
+                            <Select
                                 value={filterUser}
                                 onChange={(e) => setFilterUser(e.target.value)}
-                            >
-                                <option value="">Todos</option>
-                                {users.map((u) => (
-                                    <option key={u.id} value={u.id}>{u.nome}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                                <CheckCircle size={12} /> Status
-                            </label>
-                            <select
-                                className="w-full text-sm rounded-lg border-slate-200 bg-white py-2"
+                                options={[{ value: '', label: 'Todos' }, ...users.map(u => ({ value: u.id, label: u.nome }))]}
+                            />
+                        </FormField>
+                        <FormField label="Status">
+                            <Select
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
-                            >
-                                <option value="">Todos</option>
-                                <option value="DRAFT">Rascunho</option>
-                                <option value="PENDING">Pendente</option>
-                                <option value="SEPARATING">Em Separação</option>
-                                <option value="SEPARATED">Separado</option>
-                                <option value="DELIVERED">Entregue</option>
-                                <option value="CANCELED">Cancelado</option>
-                            </select>
-                        </div>
+                                options={[
+                                    { value: '', label: 'Todos' },
+                                    { value: 'DRAFT', label: 'Rascunho' },
+                                    { value: 'PENDING', label: 'Pendente' },
+                                    { value: 'SEPARATING', label: 'Em Separação' },
+                                    { value: 'SEPARATED', label: 'Separado' },
+                                    { value: 'DELIVERED', label: 'Entregue' },
+                                    { value: 'CANCELED', label: 'Cancelado' }
+                                ]}
+                            />
+                        </FormField>
                     </>
                 }
             />
@@ -331,17 +340,22 @@ export function StockRequestList() {
             {loading ? (
                 <TableSkeleton rows={5} columns={4} showActions={true} />
             ) : error ? (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-                    <div className="text-red-500 font-bold mb-2">Erro ao carregar</div>
-                    <div className="text-red-400 text-sm">{error}</div>
-                    <button onClick={loadData} className="mt-4 px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors text-sm font-bold">Tentar Novamente</button>
-                </div>
+                <EmptyState
+                    icon={AlertTriangle}
+                    title="Erro ao carregar"
+                    description={error}
+                    action={
+                        <Button variant="danger" onClick={loadData}>
+                            Tentar Novamente
+                        </Button>
+                    }
+                />
             ) : filteredRequests.length === 0 ? (
-                <div className="bg-white p-12 rounded-2xl text-center border border-slate-100">
-                    <Package size={48} className="mx-auto text-slate-200 mb-4" />
-                    <h3 className="font-bold text-slate-600">Nenhuma requisição encontrada</h3>
-                    <p className="text-slate-400 text-sm">Tente ajustar os filtros ou crie uma nova requisição.</p>
-                </div>
+                <EmptyState
+                    icon={Package}
+                    title="Nenhuma requisição encontrada"
+                    description="Tente ajustar os filtros ou crie uma nova requisição."
+                />
             ) : (
                 <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm text-slate-500 px-2 pb-2">
@@ -353,7 +367,7 @@ export function StockRequestList() {
                         const StatusIcon = StatusInfo.icon;
 
                         return (
-                            <div key={req.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-6 group">
+                            <Card key={req.id} hover className="p-5 flex items-center gap-6 group cursor-pointer" onClick={() => handleViewDetails(req)}>
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${StatusInfo.color.split(' ')[0]} bg-opacity-50`}>
                                     <StatusIcon size={24} className={StatusInfo.color.split(' ')[1]} />
                                 </div>
@@ -369,13 +383,11 @@ export function StockRequestList() {
                                             size="sm"
                                         />
                                         {req.category && req.category !== 'GERAL' && (
-                                            <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wide font-bold ${
-                                                req.category === 'SEGURANCA' 
-                                                    ? 'bg-orange-50 text-orange-700 border-orange-200' 
-                                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                            }`}>
-                                                {req.category === 'SEGURANCA' ? '🦺 EPI' : '👕 Uniforme'}
-                                            </span>
+                                            <StatusBadge 
+                                                size="sm" 
+                                                variant={req.category === 'SEGURANCA' ? 'orange' : 'info'} 
+                                                status={req.category === 'SEGURANCA' ? 'EPI' : 'Uniforme'} 
+                                            />
                                         )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
@@ -394,37 +406,7 @@ export function StockRequestList() {
                                         )}
                                     </div>
                                 </div>
-
-                                <div className="text-right flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                    {/* Delete Button - Admins Only */}
-                                    {isAdmin && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDelete(req); }}
-                                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Excluir Solicitação"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    )}
-
-                                    {/* Action Button */}
-                                    {canConfirm && (req.status === 'PENDING' || req.status === 'SEPARATING') ? (
-                                        <button
-                                            onClick={() => handleSeparationClick(req)}
-                                            className="bg-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-purple-200 hover:bg-purple-700 transition-all active:scale-95 flex items-center gap-2"
-                                        >
-                                            <Package size={16} /> Separar
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleViewDetails(req)}
-                                            className="px-5 py-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold text-sm rounded-xl transition-colors"
-                                        >
-                                            Ver Detalhes
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
+                            </Card>
                         );
                     })}
                 </div>
@@ -435,6 +417,7 @@ export function StockRequestList() {
                 onClose={handleCloseModal}
                 onSave={handleCloseModal}
                 requestId={selectedRequestId}
+                onSeparar={handleSeparationClick}
             />
 
             {separationRequest && (
@@ -454,6 +437,16 @@ export function StockRequestList() {
             <TransferGuideModal
                 isOpen={isGuideOpen}
                 onClose={() => setIsGuideOpen(false)}
+            />
+
+            <ConfirmDialog
+                isOpen={confirmDialog.isOpen}
+                onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                title={confirmDialog.title}
+                description={confirmDialog.description}
+                variant={confirmDialog.variant}
+                onConfirm={confirmDialog.onConfirm}
+                isLoading={confirmDialog.isLoading}
             />
         </div>
     );

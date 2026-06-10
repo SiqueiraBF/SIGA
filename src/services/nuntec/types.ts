@@ -8,6 +8,12 @@ export interface NuntecConfig {
     AUTH_PASS: string;
 }
 
+export interface NuntecOperator {
+    id: string;
+    name: string;
+    is_technical: boolean;
+}
+
 export const DEFAULTS = {
     BASE_URL: '/api/nuntec',
     START_DATE_SYNC: '2026-01-01T00:00:00',

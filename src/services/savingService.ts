@@ -15,13 +15,14 @@ export interface Saving {
   created_at: string;
   created_by?: string;
   fornecedor?: Supplier;
+  usuario?: { nome: string };
 }
 
 export const savingService = {
   async getAll(): Promise<Saving[]> {
     const { data, error } = await supabase
       .from('savings')
-      .select('*, fornecedor:suppliers(*)')
+      .select('*, fornecedor:suppliers(*), usuario:usuarios(nome)')
       .order('data', { ascending: false });
 
     if (error) throw error;
@@ -72,7 +73,7 @@ export const savingService = {
     return data;
   },
 
-  async update(id: string, savingData: Partial<Omit<Saving, 'id' | 'created_at' | 'anexos'>>, files: File[] = []): Promise<Saving> {
+  async update(id: string, savingData: Partial<Omit<Saving, 'id' | 'created_at' | 'anexos'>>, files: File[] = [], existingAnexos?: {name: string, path: string}[]): Promise<Saving> {
     // Busca dados atuais
     const { data: currentSaving, error: fetchError } = await supabase
       .from('savings')
@@ -82,7 +83,24 @@ export const savingService = {
 
     if (fetchError) throw fetchError;
 
-    let anexos = currentSaving.anexos || [];
+    let finalAnexos = currentSaving.anexos || [];
+
+    if (existingAnexos) {
+      const removedAnexos = finalAnexos.filter(
+        (a: any) => !existingAnexos.some(ea => ea.path === a.path)
+      );
+
+      if (removedAnexos.length > 0) {
+        const pathsToRemove = removedAnexos.map((a: any) => a.path);
+        const { error: storageError } = await supabase.storage
+          .from('savings_attachments')
+          .remove(pathsToRemove);
+        
+        if (storageError) console.error('Error removing files:', storageError);
+      }
+
+      finalAnexos = existingAnexos;
+    }
 
     // Calcular saving e desconto se valor inicial/final mudar
     let savingValue = currentSaving.saving;
@@ -110,7 +128,7 @@ export const savingService = {
 
         if (uploadError) throw uploadError;
 
-        anexos.push({
+        finalAnexos.push({
           name: file.name,
           path: filePath
         });
@@ -123,7 +141,7 @@ export const savingService = {
         ...savingData,
         saving: savingValue,
         desconto_percentual: descontoPercentual,
-        anexos
+        anexos: finalAnexos
       })
       .eq('id', id)
       .select()

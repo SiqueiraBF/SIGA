@@ -522,18 +522,34 @@ export const notificationService = {
     try {
       // 1. Buscar configurações
       const settings = await import('./systemService').then((m) =>
-        m.systemService.getParameters(['email_estoque_to', 'email_estoque_cc']),
+        m.systemService.getParameters(['email_estoque', 'email_estoque_to', 'email_estoque_cc']),
       );
-      const to =
-        settings['email_estoque_to']
+
+      let to: string[] = [];
+      let cc: string[] = [];
+
+      // Novo formato JSON (EmailSettingsModal padrão)
+      if (settings['email_estoque']) {
+        try {
+          const parsed = JSON.parse(settings['email_estoque']);
+          to = (parsed.to || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
+          cc = (parsed.cc || '').split(';').map((e: string) => e.trim()).filter((e: string) => e);
+        } catch {
+          // Não é JSON, ignorar e tentar formato legado
+        }
+      }
+
+      // Fallback formato legado (chaves separadas email_estoque_to / email_estoque_cc)
+      if (to.length === 0) {
+        to = settings['email_estoque_to']
           ?.split(',')
-          .map((e) => e.trim())
-          .filter((e) => e) || [];
-      const cc =
-        settings['email_estoque_cc']
+          .map((e: string) => e.trim())
+          .filter((e: string) => e) || [];
+        cc = settings['email_estoque_cc']
           ?.split(',')
-          .map((e) => e.trim())
-          .filter((e) => e) || [];
+          .map((e: string) => e.trim())
+          .filter((e: string) => e) || [];
+      }
 
       if (to.length === 0) {
         console.warn('[NOTIFICATION] Nenhum e-mail de destino configurado para estoque.');

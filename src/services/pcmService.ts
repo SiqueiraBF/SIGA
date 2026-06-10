@@ -59,7 +59,7 @@ export const pcmService = {
     return data;
   },
 
-  async createRequest(requestData: Partial<PcmRequest>, file?: File, currentUser?: { id: string, email: string }): Promise<PcmRequest> {
+  async createRequest(requestData: Partial<PcmRequest>, files?: File[], currentUser?: { id: string, email: string }): Promise<PcmRequest> {
     if (!currentUser || !currentUser.id || !currentUser.email) throw new Error('Usuário autenticado não encontrado ou sem email');
     const userId = currentUser.id;
 
@@ -77,22 +77,26 @@ export const pcmService = {
     }
 
     let anexo_pcm_url = '';
-    if (file) {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('pcm-anexos')
-        .upload(filePath, file);
+    if (files && files.length > 0) {
+      const urls: string[] = [];
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
+        const filePath = `${userId}/${fileName}`;
         
-      if (uploadError) throw uploadError;
-      
-      const { data: urlData } = supabase.storage
-        .from('pcm-anexos')
-        .getPublicUrl(filePath);
+        const { error: uploadError } = await supabase.storage
+          .from('pcm-anexos')
+          .upload(filePath, file);
+          
+        if (uploadError) throw uploadError;
         
-      anexo_pcm_url = urlData.publicUrl;
+        const { data: urlData } = supabase.storage
+          .from('pcm-anexos')
+          .getPublicUrl(filePath);
+          
+        urls.push(urlData.publicUrl);
+      }
+      anexo_pcm_url = JSON.stringify(urls);
     }
 
     const { data, error } = await supabase
@@ -147,11 +151,11 @@ export const pcmService = {
               subject: `[Solicitação PCM] Nova Requisição de Produtos: ${requestData.num_requisicao} | ${data.fazenda?.nome || 'N/A'} | Máquina ${requestData.maquina}`,
               htmlBody: emailHtml,
               fromEmail: currentUser.email,
-              attachments: file ? [{
-                name: file.name,
-                contentType: file.type,
-                contentBytes: await fileToBase64(file)
-              }] : undefined
+              attachments: files && files.length > 0 ? await Promise.all(files.map(async (f) => ({
+                name: f.name,
+                contentType: f.type,
+                contentBytes: await fileToBase64(f)
+              }))) : undefined
             }
           });
 
@@ -178,35 +182,55 @@ export const pcmService = {
     return data;
   },
 
-  async updateRequest(id: string, requestData: Partial<PcmRequest>, file?: File, currentUser?: { id: string, email: string }): Promise<PcmRequest> {
+  async updateRequest(id: string, requestData: Partial<PcmRequest>, files?: File[], currentUser?: { id: string, email: string }): Promise<PcmRequest> {
     if (!currentUser || !currentUser.id) throw new Error('Usuário autenticado não encontrado');
     const userId = currentUser.id;
 
-    let anexo_pcm_url = requestData.anexo_pcm_url;
-    if (file) {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
+    const updatePayload: any = { ...requestData };
+
+    if (requestData.anexo_pcm_url !== undefined || (files && files.length > 0)) {
+      let combinedUrls: string[] = [];
+      if (requestData.anexo_pcm_url) {
+        try {
+          const parsed = JSON.parse(requestData.anexo_pcm_url);
+          if (Array.isArray(parsed)) {
+            combinedUrls = parsed;
+          } else {
+            combinedUrls = [requestData.anexo_pcm_url];
+          }
+        } catch (e) {
+          combinedUrls = [requestData.anexo_pcm_url];
+        }
+      }
+
+      if (files && files.length > 0) {
+        for (const file of files) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
+          const filePath = `${userId}/${fileName}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('pcm-anexos')
+            .upload(filePath, file);
+            
+          if (uploadError) throw uploadError;
+          
+          const { data: urlData } = supabase.storage
+            .from('pcm-anexos')
+            .getPublicUrl(filePath);
+            
+          combinedUrls.push(urlData.publicUrl);
+        }
+      }
       
-      const { error: uploadError } = await supabase.storage
-        .from('pcm-anexos')
-        .upload(filePath, file);
-        
-      if (uploadError) throw uploadError;
-      
-      const { data: urlData } = supabase.storage
-        .from('pcm-anexos')
-        .getPublicUrl(filePath);
-        
-      anexo_pcm_url = urlData.publicUrl;
+      updatePayload.anexo_pcm_url = combinedUrls.length > 0 ? JSON.stringify(combinedUrls) : null;
+    } else {
+      delete updatePayload.anexo_pcm_url;
     }
 
     const { data, error } = await supabase
       .from('pcm_solicitacoes_compras')
-      .update({
-        ...requestData,
-        ...(anexo_pcm_url && { anexo_pcm_url })
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select('*, fazenda:fazendas(nome)')
       .single();
@@ -216,35 +240,43 @@ export const pcmService = {
   },
 
   async deleteRequest(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('pcm_solicitacoes_compras')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select();
 
     if (error) throw error;
+    if (data && data.length === 0) {
+      throw new Error('Sem permissão para excluir ou registro não encontrado.');
+    }
   },
 
-  async confirmRequest(id: string, almoxData: Partial<PcmRequest>, file?: File, currentUser?: { id: string, email: string }): Promise<PcmRequest> {
+  async confirmRequest(id: string, almoxData: Partial<PcmRequest>, files?: File[], currentUser?: { id: string, email: string }): Promise<PcmRequest> {
     if (!currentUser || !currentUser.id || !currentUser.email) throw new Error('Usuário autenticado não encontrado ou sem email');
     const userId = currentUser.id;
 
     let anexo_almox_url = '';
-    if (file) {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `almox_${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('pcm-anexos')
-        .upload(filePath, file);
+    if (files && files.length > 0) {
+      const urls: string[] = [];
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `almox_${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
+        const filePath = `${userId}/${fileName}`;
         
-      if (uploadError) throw uploadError;
-      
-      const { data: urlData } = supabase.storage
-        .from('pcm-anexos')
-        .getPublicUrl(filePath);
+        const { error: uploadError } = await supabase.storage
+          .from('pcm-anexos')
+          .upload(filePath, file);
+          
+        if (uploadError) throw uploadError;
         
-      anexo_almox_url = urlData.publicUrl;
+        const { data: urlData } = supabase.storage
+          .from('pcm-anexos')
+          .getPublicUrl(filePath);
+          
+        urls.push(urlData.publicUrl);
+      }
+      anexo_almox_url = JSON.stringify(urls);
     }
 
     const { data, error } = await supabase
@@ -305,11 +337,11 @@ export const pcmService = {
               fromEmail: currentUser.email,
               replyToGraphMessageId: data.email_graph_message_id || undefined,
               replyToInternetMessageId: data.email_thread_id || undefined,
-              attachments: file ? [{
-                name: file.name,
-                contentType: file.type,
-                contentBytes: await fileToBase64(file)
-              }] : undefined
+              attachments: files && files.length > 0 ? await Promise.all(files.map(async (f) => ({
+                name: f.name,
+                contentType: f.type,
+                contentBytes: await fileToBase64(f)
+              }))) : undefined
             }
           });
 

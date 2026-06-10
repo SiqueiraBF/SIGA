@@ -26,23 +26,24 @@ Para manter o ecossistema organizado, você deve separar as responsabilidades as
 
 - **Pages (`src/pages`)**: Componentes de rota (views principais). Sempre exportados e carregados via `lazy()` no `App.tsx`. Devem interagir com serviços/hooks e envolver Layouts/Componentes menores.
 - **Components (`src/components`)**: 
-  - **Base/UI (`src/components/ui`)**: Componentes base indivisíveis (Atoms/Molecules) como Badge, FilterBar, StatsCard, TableActions. Não devem conter lógica de negócio.
+  - **Base/UI (`src/components/ui`)**: Componentes base indivisíveis (Atoms/Molecules). **⚠️ USO OBRIGATÓRIO**: Antes de criar qualquer UI, você deve consultar a regra `ui_component_catalog.md` para conhecer a API dos componentes existentes (como `DataTable`, `PageHeader`, `FilterBar`, etc). Não construa do zero o que já existe no catálogo.
   - **Módulos/Domínio**: Componentes específicos de negócio (Ex: `FuelingFormModal.tsx`, pastas por domínio como `audit`, `cleaning`, `dashboard`).
 - **Services (`src/services`)**: Funções que abstraem as chamadas ao banco de dados (Supabase) ou serviços externos, para serem consumidos via React Query.
 
 4. Diretrizes de Código e UI
 - **Tipagem Proibitiva**: É terminantemente proibido o uso de `any`. Toda prop deve ser tipada e preferencialmente desestruturada.
 - **Design Tokens**: Nunca use valores "hardcoded" (ex: text-[#123456]). Utilize as classes utilitárias de cores do tema (ex: text-primary, bg-card) configuradas no `tailwind.config.js`.
-- **Feedback ao Usuário**: Toda ação assíncrona (mutations do React Query) deve ter Loading (Skeletons/Spinners) e feedback de sucesso/erro.
+- **Feedback ao Usuário (OBRIGATÓRIO)**:
+  - **Sucesso/Erro**: NUNCA use `alert()`. Use sempre `import toast from 'react-hot-toast'` (`toast.success` ou `toast.error`).
+  - **Confirmações**: NUNCA use `window.confirm()`. Use o componente `<ConfirmDialog>`.
+  - Toda ação assíncrona deve ter Loading (Skeletons/Spinners).
 - **Tratamento de Erros**: Utilize Error Boundaries onde fizer sentido e exiba as falhas de API de forma amigável ao usuário. Extratifique lógica pesada para hooks customizados (`src/hooks` ou equivalentes).
 
-### Padrão Tabela Responsiva "Elite" (Anti-Scroll Horizontal)
-Sempre que construir tabelas de dados densos, siga rigorosamente:
-1. **Evitar Scroll Horizontal**: Nunca utilize `whitespace-nowrap` de forma global na linha. Aplique `truncate` e limites máximos (`max-w-[150px]`) em colunas de texto descritivo.
-2. **Padding Otimizado**: Utilize padding reduzido (`px-3` ou `px-4`) nas células (`<td>` e `<th>`) em tabelas com muitas colunas para maximizar a largura útil.
-3. **Data e Hora (Split-Line)**: Empilhe data e hora em blocos verticais (`flex-col items-start leading-tight`) usando `text-slate-500 font-medium` para data e `text-slate-400 text-[10px]` para a hora. Jamais exiba "DD/MM/YYYY HH:MM" na mesma linha horizontal.
-4. **Resiliência da Coluna de Ações**: A coluna de "Ações" deve estar à direita, ter largura fixa (ex: `w-[100px]`) e não ser colapsada. Os ícones/botões devem estar alinhados com `justify-end gap-2`.
-5. **Tags de Identificação**: Códigos importantes (SCs, Notas) não devem ser texto livre, mas exibidos dentro de badges com fonte monospace responsiva (ex: `font-mono text-[11px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md`).
+### Padrão Tabela Responsiva "Elite" e Componentes Estruturais
+A padronização visual Light Premium exige que você **PARE** de usar tags HTML genéricas para layouts complexos.
+1. **Tabelas**: NUNCA construa tags `<table>` manualmente. Você deve SEMPRE usar o componente `<DataTable>` exportado em `src/components/ui/DataTable.tsx`. Ele já encapsula o design Elite (anti-scroll horizontal, padding otimizado, loading skeleton, e empty states).
+2. **Layout da Página**: Toda página principal deve fluir verticalmente (`space-y-6`) e usar `<PageHeader>` no topo. Não crie "cards monolíticos" que abracem toda a página com headers duplicados internamente. Consulte o `ui_component_catalog.md` para ver a receita exata do Page-Level Layout.
+3. **Tags de Identificação**: Códigos importantes devem usar o `<StatusBadge>` ou fonte monospace responsiva (`font-mono text-[11px]`).
 
 5. Protocolo de Atuação (Handoff do Frontend)
 Sempre que o Agente Mestre te delegar tarefas:

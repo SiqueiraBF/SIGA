@@ -17,18 +17,19 @@ A nova padronização do sistema é baseada no módulo "Solicitações de Cadast
   - Títulos da página recebem `text-2xl font-bold tracking-tight text-slate-800`.
 
 ## 2. Regras e Componentes Estruturais
-Proíba a invenção de layouts improvisados. Você deve forçar o uso dos padrões catalogados:
-- **Tabelas**: Jamais usar a tag `<table>` nativa sem o encapsulamento "Elite Data Table". Todas devem estar em containers `bg-white rounded-2xl shadow-sm border border-slate-200`.
-- **Empty States**: Páginas ou tabelas vazias devem carregar um "Empty State" com ícone de tamanho `32`, `bg-slate-50 rounded-full`, e mensagem clara.
-- **Badges de Status**: Devem usar a escala de cores Elite (ex: `bg-emerald-50 text-emerald-600 border border-emerald-200` para finalizado).
+Proíba a invenção de layouts improvisados. Você deve FORÇAR o uso dos padrões catalogados na regra `ui_component_catalog.md`:
+- **Tabelas**: Jamais usar a tag `<table>` nativa. Exija o uso do componente `<DataTable>`.
+- **Feedbacks e Modais**: Rejeite PRs com `alert()` ou `window.confirm()`. Exija `toast` e `<ConfirmDialog>`.
+- **Empty States**: Páginas ou tabelas vazias devem usar o componente `<EmptyState>`.
+- **Badges de Status**: Devem usar o componente `<StatusBadge>`.
 
 ## 3. Protocolo de Revisão e Auditoria (Quality Gate R)
-Ao revisar o trabalho do Frontend Dev ou Mobile Dev, audite rigorosamente:
-1. **Layout Wrapper**: A página usa os componentes `PageHeader` e `FilterBar` com os espaçamentos corretos (`max-w-7xl mx-auto space-y-6`)?
-2. **Arredondamento**: Os cards principais usam `rounded-2xl` e modais internos `rounded-[24px]`?
-3. **Cores Hardcoded**: Rejeite PRs que usem cores genéricas (blue, green) em vez das variantes semânticas ou slate.
+Ao revisar o trabalho do Frontend Dev ou Mobile Dev, audite rigorosamente baseando-se no `ui_component_catalog.md`:
+1. **Layout Wrapper**: A página usa os componentes `<PageHeader>` e `<FilterBar>` e flui com `max-w-7xl mx-auto space-y-6`?
+2. **Componentes Padrão**: A tabela é um `<DataTable>`? As abas usam `<TabBar>`? O componente não inventou marcação manual para algo que já existe no catálogo?
+3. **Cores Hardcoded**: Rejeite código que use cores genéricas em vez das variantes semânticas do Tailwind.
 4. **Legibilidade Técnica**: IDs (`#R-123`) estão com `font-mono font-medium text-slate-500`?
-5. **Dark Holographic**: Se estiver revisando um Dashboard antigo (Tema Escuro), certifique-se de manter os tokens `ui_design_tokens.md` (Teal, Cyan, Slate-950). O padrão padrão para **novos** módulos de CRUD/Negócio, contudo, é o Light Premium.
+5. **Dark Holographic**: Se estiver revisando um Dashboard antigo, mantenha os tokens Teal/Cyan. Novos CRUDs usam Light Premium.
 
 ## 4. Skills de Consulta Obrigatória
 Sempre que for chamado a definir ou avaliar componentes, utilize as referências:

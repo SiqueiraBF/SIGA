@@ -29,7 +29,7 @@ export function DirectReceiptDashboard() {
     const parsedStart = customStart ? new Date(customStart + 'T00:00:00') : null;
     const parsedEnd = customEnd ? new Date(customEnd + 'T23:59:59') : null;
 
-    const { data: metrics, isPending, isError } = useDirectReceiptDashboardMetrics(period, parsedStart, parsedEnd);
+    const { data: metrics, isPending, isError, isFetching } = useDirectReceiptDashboardMetrics(period, parsedStart, parsedEnd);
 
     if (isPending && !metrics) {
         return (
@@ -78,7 +78,7 @@ export function DirectReceiptDashboard() {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+        <div className={`space-y-6 animate-in fade-in duration-500 pb-20 transition-opacity duration-200 ${isFetching ? 'opacity-60 pointer-events-none' : ''}`}>
             {/* Header / Filtro */}
             <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-2 text-slate-700 font-bold">

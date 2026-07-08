@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { directReceiptService } from '../services/directReceiptService';
 import { DirectReceipt } from '../types';
 import {
@@ -8,7 +8,6 @@ import {
     subMonths,
     format,
     differenceInDays,
-    parseISO,
 } from 'date-fns';
 
 export type PeriodFilter = '7D' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
@@ -20,33 +19,26 @@ export function useDirectReceiptDashboardMetrics(
     fazendaFilter: string | null = null
 ) {
     return useQuery({
-        queryKey: ['direct-receipt-dashboard', period, customStart, customEnd, fazendaFilter],
+        queryKey: ['direct-receipt-dashboard', period, customStart?.toISOString(), customEnd?.toISOString(), fazendaFilter],
         queryFn: async () => {
             let dataInicio: string | undefined;
             let dataFim: string | undefined;
 
             const today = new Date();
 
-            switch (period) {
-                case '7D':
-                    dataInicio = format(subDays(today, 7), 'yyyy-MM-dd');
-                    dataFim = format(today, 'yyyy-MM-dd');
-                    break;
-                case 'THIS_MONTH':
-                    dataInicio = format(startOfMonth(today), 'yyyy-MM-dd');
-                    dataFim = format(endOfMonth(today), 'yyyy-MM-dd');
-                    break;
-                case 'LAST_MONTH':
-                    const lastMonth = subMonths(today, 1);
-                    dataInicio = format(startOfMonth(lastMonth), 'yyyy-MM-dd');
-                    dataFim = format(endOfMonth(lastMonth), 'yyyy-MM-dd');
-                    break;
-                case 'CUSTOM':
-                    if (customStart && customEnd) {
-                        dataInicio = format(customStart, 'yyyy-MM-dd');
-                        dataFim = format(customEnd, 'yyyy-MM-dd');
-                    }
-                    break;
+            if (period === '7D') {
+                dataInicio = format(subDays(today, 6), 'yyyy-MM-dd');
+                dataFim = format(today, 'yyyy-MM-dd');
+            } else if (period === 'THIS_MONTH') {
+                dataInicio = format(startOfMonth(today), 'yyyy-MM-dd');
+                dataFim = format(endOfMonth(today), 'yyyy-MM-dd');
+            } else if (period === 'LAST_MONTH') {
+                const lastMonth = subMonths(today, 1);
+                dataInicio = format(startOfMonth(lastMonth), 'yyyy-MM-dd');
+                dataFim = format(endOfMonth(lastMonth), 'yyyy-MM-dd');
+            } else if (period === 'CUSTOM') {
+                dataInicio = customStart ? format(customStart, 'yyyy-MM-dd') : format(subDays(today, 30), 'yyyy-MM-dd');
+                dataFim = customEnd ? format(customEnd, 'yyyy-MM-dd') : format(today, 'yyyy-MM-dd');
             }
 
             // Busca os dados filtrados
@@ -75,7 +67,7 @@ export function useDirectReceiptDashboardMetrics(
             });
             const volumeByFazenda = Array.from(fazendaMap.entries())
                 .map(([name, value]) => ({ name, value }))
-                .sort((a, b) => b.value - a.value);
+                .sort((a: any, b: any) => b.value - a.value);
 
             // 3. Ranking de Locais (Gráfico de Barras)
             const localMap = new Map<string, number>();
@@ -86,7 +78,7 @@ export function useDirectReceiptDashboardMetrics(
             });
             const rankingLocais = Array.from(localMap.entries())
                 .map(([name, value]) => ({ name, value }))
-                .sort((a, b) => b.value - a.value);
+                .sort((a: any, b: any) => b.value - a.value);
 
             // 4. Atraso de Registro (Média e Ranking)
             let sumAtrasoDays = 0;
@@ -125,5 +117,6 @@ export function useDirectReceiptDashboardMetrics(
             };
         },
         staleTime: 5 * 60 * 1000, 
+        placeholderData: keepPreviousData,
     });
 }

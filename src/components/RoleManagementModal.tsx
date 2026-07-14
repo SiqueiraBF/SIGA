@@ -291,6 +291,16 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
         const updatedPerm = { ...currentPerm, [field]: value };
 
+        // Sincronizar can_edit e can_delete com edit_scope e delete_scope para consistência com o banco
+        if (moduleKey === 'pagamentos_fora_prazo' || moduleKey === 'solicitacoes_pcm') {
+          if (field === 'can_edit') {
+            updatedPerm.edit_scope = value ? 'ALL' : 'NONE';
+          }
+          if (field === 'can_delete') {
+            updatedPerm.delete_scope = value ? 'ALL' : 'NONE';
+          }
+        }
+
         // Legacy Sync Strategy
         let newLegacyList = [...r.modulos_permitidos];
 
@@ -548,7 +558,7 @@ export function RoleManagementModal({ isOpen, onClose }: { isOpen: boolean; onCl
                                       <option value="ALL">👀 Todos</option>
                                       {mod.key !== 'gestao_estoque' && (
                                         <>
-                                          {mod.key !== 'pagamentos_fora_prazo' && mod.key !== 'registro_pagamentos_atraso' && (
+                                          {mod.key !== 'registro_pagamentos_atraso' && (
                                             <option value="SAME_FARM">🏠 Mesma Fazenda</option>
                                           )}
                                           {mod.key !== 'gestao_postos' && mod.key !== 'gestao_recebimento_direto' && (
